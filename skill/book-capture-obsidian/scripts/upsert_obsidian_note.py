@@ -189,7 +189,12 @@ def _render_managed_block(isbn13: Optional[str], goodreads_book_id: Optional[str
     authors = metadata.get("authors") or []
     published_year = _parse_year_from_date(metadata.get("published_date"))
     tags = extras.get("tags") or []
-    summary = metadata.get("description") or "Summary pending."
+    summary = metadata.get("description")
+    if not summary:
+        author_text = ", ".join(authors) if authors else "Unknown author"
+        publisher_text = metadata.get("publisher") or "Unknown publisher"
+        year_text = str(published_year) if published_year else "unknown year"
+        summary = f"Book by {author_text}, published by {publisher_text} ({year_text})."
 
     frontmatter_lines = [
         "---",
