@@ -239,6 +239,8 @@ def _build_payload(
     isbn13 = _pick_isbn13(isbn13_raw=isbn13_raw, isbn10_raw=isbn10_raw)
 
     tags = _split_tags(bookshelves)
+    if "book" not in tags:
+        tags.insert(0, "book")
     shelf_tag = _make_shelf_tag(shelf)
     if shelf_tag and shelf_tag not in tags:
         tags.append(shelf_tag)

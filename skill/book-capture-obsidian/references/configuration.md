@@ -5,7 +5,8 @@ Configure paths and behavior with environment variables.
 
 ## Core Paths
 
-`BOOK_CAPTURE_VAULT_PATH` is mandatory for migration commands.
+Use `--vault-path` on commands, or set `BOOK_CAPTURE_VAULT_PATH` as a default.
+At least one of them is required for migration commands.
 
 ```bash
 export BOOK_CAPTURE_VAULT_PATH="/path/to/obsidian-vault"

@@ -374,6 +374,12 @@ def _build_note_path(
         idx += 1
 
 
+def _is_within_vault(note_path: Path, vault_path: str) -> bool:
+    vault_root = Path(vault_path).expanduser().resolve()
+    note_abs = note_path.expanduser().resolve()
+    return note_abs == vault_root or vault_root in note_abs.parents
+
+
 def _upsert_note_core(payload: MetadataDict, vault_path: str, notes_dir: str, target_note: Optional[str]) -> dict:
     isbn13, goodreads_book_id, metadata, extras, error = _prepare_metadata(payload)
     if error or metadata is None or extras is None:
@@ -387,6 +393,16 @@ def _upsert_note_core(payload: MetadataDict, vault_path: str, notes_dir: str, ta
         vault_path=vault_path,
         notes_dir=notes_dir,
     )
+
+    if not _is_within_vault(note_path, vault_path=vault_path):
+        return make_result(
+            STAGE,
+            ok=False,
+            error=f"target note path escapes vault root: {note_path}",
+            note_path=str(note_path),
+        )
+
+    note_path = note_path.expanduser().resolve()
     note_path.parent.mkdir(parents=True, exist_ok=True)
 
     managed = _render_managed_block(isbn13=isbn13, goodreads_book_id=goodreads_book_id, metadata=metadata, extras=extras)
