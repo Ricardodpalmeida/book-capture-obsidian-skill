@@ -213,7 +213,7 @@ def _render_managed_block(isbn13: Optional[str], goodreads_book_id: Optional[str
         f"finished: {_yaml_scalar(extras.get('finished'))}",
         f"source: {_yaml_scalar(metadata.get('source'))}",
         f"source_url: {_yaml_scalar(metadata.get('source_url'))}",
-        f"cover_image: {_yaml_scalar(metadata.get('cover_image'))}",
+        f"cover: {_yaml_scalar(metadata.get('cover_image'))}",
         f"needs_review: {_yaml_scalar(extras.get('needs_review'))}",
         "tags:",
         _yaml_list(tags),

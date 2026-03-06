@@ -14,7 +14,7 @@ source: {{source}}
 source_confidence: {{source_confidence}}
 needs_review: {{needs_review}}
 tags: {{tags}}
-cover_image: {{cover_image}}
+cover: {{cover_image}}
 source_url: {{source_url}}
 ---
 
