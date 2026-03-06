@@ -48,30 +48,6 @@ def _as_str_list(values: Any) -> List[str]:
     return out
 
 
-def _safe_float01(value: Any, default: float = 0.0) -> float:
-    try:
-        num = float(value)
-    except (TypeError, ValueError):
-        return default
-    if num < 0:
-        return 0.0
-    if num > 1:
-        return 1.0
-    return round(num, 4)
-
-
-def _safe_rating(value: Any) -> Optional[float]:
-    if value in (None, ""):
-        return None
-    try:
-        num = float(value)
-    except (TypeError, ValueError):
-        return None
-    if num < 0 or num > 5:
-        return None
-    return round(num, 2)
-
-
 def _parse_year_from_date(value: Any) -> Optional[int]:
     text = str(value or "").strip()
     if not text:
@@ -98,21 +74,37 @@ def _yaml_scalar(value: Any) -> str:
 def _yaml_list(values: List[str]) -> str:
     if not values:
         return "[]"
-    lines = []
-    for item in values:
-        lines.append(f"  - {_yaml_scalar(item)}")
-    return "\n".join(lines)
+    return "\n".join(f"  - {_yaml_scalar(item)}" for item in values)
 
 
-def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[MetadataDict], Optional[MetadataDict], Optional[str]]:
+def _safe_http_url(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    if text.startswith("http://") or text.startswith("https://"):
+        return text
+    return None
+
+
+def _series_info_from_title(title: str) -> Tuple[Optional[str], Optional[str]]:
+    # Ex: "Leviathan Wakes (The Expanse, #1)"
+    m = re.search(r"\(([^\)#]+),\s*#([0-9]+)\)", title)
+    if not m:
+        return None, None
+    return m.group(1).strip(), m.group(2).strip()
+
+
+def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[str], Optional[MetadataDict], Optional[MetadataDict], Optional[str]]:
     """Accept envelope and raw metadata payload contracts."""
     if not isinstance(payload, dict):
-        return None, None, None, "metadata payload must be a JSON object"
+        return None, None, None, None, "metadata payload must be a JSON object"
 
     if isinstance(payload.get("metadata"), dict):
         metadata = payload["metadata"]
     else:
         metadata = payload
+
+    title = str(metadata.get("title") or "").strip()
+    if not title:
+        return None, None, None, None, "metadata payload missing title"
 
     isbn_value = (
         payload.get("isbn13")
@@ -120,28 +112,36 @@ def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[Me
         or metadata.get("isbn13")
         or metadata.get("isbn")
     )
-
     isbn13 = normalize_isbn(str(isbn_value or ""))
-    if not isbn13:
-        return None, None, None, "metadata payload missing valid isbn/isbn13"
 
-    title = str(metadata.get("title") or "").strip()
-    if not title:
-        return None, None, None, "metadata payload missing title"
+    goodreads = payload.get("goodreads") if isinstance(payload.get("goodreads"), dict) else {}
+    goodreads_book_id = str(
+        payload.get("goodreads_book_id")
+        or payload.get("book_id")
+        or goodreads.get("book_id")
+        or ""
+    ).strip() or None
+
+    if not isbn13 and not goodreads_book_id:
+        return None, None, None, None, "metadata payload missing valid isbn and goodreads_book_id"
 
     clean_metadata: MetadataDict = {
         "authors": _as_str_list(metadata.get("authors") or []),
         "categories": _as_str_list(metadata.get("categories") or []),
-        "cover_image": str(metadata.get("cover_image") or "").strip() or None,
+        "cover_image": _safe_http_url(metadata.get("cover_image")),
         "description": str(metadata.get("description") or "").strip() or None,
         "language": str(metadata.get("language") or "").strip() or None,
         "page_count": metadata.get("page_count"),
         "published_date": str(metadata.get("published_date") or "").strip() or None,
         "publisher": str(metadata.get("publisher") or "").strip() or None,
         "source": str(metadata.get("source") or payload.get("source") or "manual").strip() or "manual",
-        "source_url": str(metadata.get("source_url") or "").strip() or None,
+        "source_url": _safe_http_url(metadata.get("source_url")),
         "title": title,
     }
+
+    # Only keep cover image when it came from API metadata
+    if clean_metadata.get("source") not in {"google_books", "openlibrary"}:
+        clean_metadata["cover_image"] = None
 
     try:
         if clean_metadata["page_count"] is not None:
@@ -155,74 +155,91 @@ def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[Me
     if status not in VALID_STATUS:
         status = "to-read"
 
+    shelf = str(payload.get("shelf") or goodreads.get("exclusive_shelf") or status).strip().lower() or status
+
     tags = _as_str_list(payload.get("tags") or [])
     for category in clean_metadata.get("categories") or []:
         if category not in tags:
             tags.append(category)
+    if "book" not in tags:
+        tags.insert(0, "book")
+
+    series_name, series_index = _series_info_from_title(title)
+    if series_name:
+        series_tag = f"series-{_slugify_filename(series_name).lower().replace(' ', '-') }"
+        if series_tag not in tags:
+            tags.append(series_tag)
 
     extras: MetadataDict = {
         "status": status,
-        "rating": _safe_rating(payload.get("rating")),
+        "shelf": shelf,
         "needs_review": bool(payload.get("needs_review", False)),
-        "source_confidence": _safe_float01(payload.get("source_confidence", 0.0), default=0.0),
         "tags": tags,
         "started": str(payload.get("started") or "").strip() or None,
         "finished": str(payload.get("finished") or "").strip() or None,
+        "series_name": series_name,
+        "series_index": series_index,
     }
 
-    return isbn13, clean_metadata, extras, None
+    return isbn13, goodreads_book_id, clean_metadata, extras, None
 
 
-def _render_auto_block(isbn13: str, metadata: MetadataDict, extras: MetadataDict) -> str:
-    isbn10 = isbn13_to_isbn10(isbn13)
+def _render_managed_block(isbn13: Optional[str], goodreads_book_id: Optional[str], metadata: MetadataDict, extras: MetadataDict) -> str:
+    isbn10 = isbn13_to_isbn10(isbn13) if isbn13 else None
     authors = metadata.get("authors") or []
     published_year = _parse_year_from_date(metadata.get("published_date"))
     tags = extras.get("tags") or []
+    summary = metadata.get("description") or "Summary pending."
 
     frontmatter_lines = [
         "---",
         f"title: {_yaml_scalar(metadata['title'])}",
         "authors:",
         _yaml_list(authors),
+        f"publisher: {_yaml_scalar(metadata.get('publisher'))}",
+        f"published_date: {_yaml_scalar(metadata.get('published_date'))}",
+        f"published_year: {_yaml_scalar(published_year)}",
         f"isbn_10: {_yaml_scalar(isbn10)}",
         f"isbn_13: {_yaml_scalar(isbn13)}",
-        f"publisher: {_yaml_scalar(metadata.get('publisher'))}",
-        f"published_year: {_yaml_scalar(published_year)}",
+        f"goodreads_book_id: {_yaml_scalar(goodreads_book_id)}",
+        f"shelf: {_yaml_scalar(extras.get('shelf'))}",
         f"status: {_yaml_scalar(extras.get('status'))}",
-        f"rating: {_yaml_scalar(extras.get('rating'))}",
         f"started: {_yaml_scalar(extras.get('started'))}",
         f"finished: {_yaml_scalar(extras.get('finished'))}",
         f"source: {_yaml_scalar(metadata.get('source'))}",
-        f"source_confidence: {_yaml_scalar(extras.get('source_confidence'))}",
+        f"source_url: {_yaml_scalar(metadata.get('source_url'))}",
+        f"cover_image: {_yaml_scalar(metadata.get('cover_image'))}",
         f"needs_review: {_yaml_scalar(extras.get('needs_review'))}",
         "tags:",
         _yaml_list(tags),
-        f"cover_image: {_yaml_scalar(metadata.get('cover_image'))}",
-        f"source_url: {_yaml_scalar(metadata.get('source_url'))}",
-        "---",
     ]
 
-    details_lines = [
+    if extras.get("series_name"):
+        frontmatter_lines.append(f"series: {_yaml_scalar(extras.get('series_name'))}")
+        frontmatter_lines.append(f"series_index: {_yaml_scalar(extras.get('series_index'))}")
+
+    frontmatter_lines.append("---")
+
+    body_lines = [
         *frontmatter_lines,
         "",
-        BEGIN_MARKER,
         f"# {metadata['title']}",
         "",
         "## Summary",
-        metadata.get("description") or "",
-        "",
-        "## Metadata Audit",
-        "- Canonical identifiers: see frontmatter fields `isbn_13` and `isbn_10`.",
-        f"- Authors: {', '.join(authors) if authors else 'N/A'}",
-        f"- Publisher: {metadata.get('publisher') or 'N/A'}",
-        f"- Published: {metadata.get('published_date') or 'N/A'}",
-        f"- Language: {metadata.get('language') or 'N/A'}",
-        f"- Pages: {metadata.get('page_count') if metadata.get('page_count') is not None else 'N/A'}",
-        f"- Metadata Source: {metadata.get('source') or 'N/A'}",
-        END_MARKER,
+        summary,
     ]
 
-    return "\n".join(details_lines)
+    if extras.get("series_name"):
+        body_lines.extend(
+            [
+                "",
+                "## Collection",
+                f"- Series: [[Series - {extras['series_name']}]]",
+                f"- Volume: {extras.get('series_index') or 'N/A'}",
+            ]
+        )
+
+    return "\n".join(body_lines).strip() + "\n"
 
 
 def _split_by_markers(content: str) -> Tuple[bool, str, str]:
@@ -237,17 +254,91 @@ def _split_by_markers(content: str) -> Tuple[bool, str, str]:
     return True, prefix, suffix
 
 
-def _find_existing_note_by_isbn(vault_path: str, notes_dir: str, isbn13: str) -> Optional[Path]:
+def _extract_user_notes(existing: str) -> str:
+    marker = "## User Notes"
+    idx = existing.find(marker)
+    if idx != -1:
+        return existing[idx:].strip() + "\n"
+
+    has_markers, _prefix, suffix = _split_by_markers(existing)
+    if has_markers and suffix.strip():
+        s = suffix.strip()
+        if not s.startswith("## User Notes"):
+            return "## User Notes\n\n" + s + "\n"
+        return s + "\n"
+
+    if existing.strip():
+        return "## User Notes\n\n" + existing.strip() + "\n"
+
+    return "## User Notes\n"
+
+
+def _frontmatter_lookup(path: Path, key: str) -> Optional[str]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return None
+    if not lines:
+        return None
+    start = None
+    for i, line in enumerate(lines[:20]):
+        if line.strip() == "---":
+            start = i
+            break
+    if start is None:
+        return None
+
+    for line in lines[start + 1 : start + 80]:
+        if line.strip() == "---":
+            break
+        if line.startswith(f"{key}:"):
+            return line.split(":", 1)[1].strip().strip('"')
+    return None
+
+
+def _find_existing_note(vault_path: str, notes_dir: str, isbn13: Optional[str], goodreads_book_id: Optional[str]) -> Optional[Path]:
     root = Path(vault_path).expanduser() / Path(notes_dir)
     if not root.exists():
         return None
-    pattern = f"*({isbn13}).md"
-    matches = sorted(root.rglob(pattern))
-    return matches[0] if matches else None
+
+    # Fast path for legacy filenames with ISBN suffix
+    if isbn13:
+        matches = sorted(root.rglob(f"*({isbn13}).md"))
+        if matches:
+            return matches[0]
+
+    # Frontmatter lookup fallback
+    for note_path in root.rglob("*.md"):
+        if isbn13:
+            val = _frontmatter_lookup(note_path, "isbn_13")
+            if val == isbn13:
+                return note_path
+        if goodreads_book_id:
+            val = _frontmatter_lookup(note_path, "goodreads_book_id")
+            if val == goodreads_book_id:
+                return note_path
+
+    return None
+
+
+def _candidate_filename(metadata: MetadataDict) -> str:
+    title = _slugify_filename(str(metadata.get("title") or "Book"))
+    author = _slugify_filename((metadata.get("authors") or ["Unknown Author"])[0])
+    publisher = _slugify_filename(str(metadata.get("publisher") or ""))
+    year = _parse_year_from_date(metadata.get("published_date"))
+
+    parts = [title, author]
+    if publisher:
+        parts.append(publisher)
+    if year:
+        parts.append(str(year))
+
+    return _slugify_filename(" - ".join(parts)) + ".md"
 
 
 def _build_note_path(
-    isbn13: str,
+    isbn13: Optional[str],
+    goodreads_book_id: Optional[str],
     metadata: MetadataDict,
     target_note: Optional[str],
     vault_path: str,
@@ -256,24 +347,36 @@ def _build_note_path(
     if target_note:
         return Path(target_note).expanduser()
 
-    existing = _find_existing_note_by_isbn(vault_path=vault_path, notes_dir=notes_dir, isbn13=isbn13)
+    existing = _find_existing_note(vault_path=vault_path, notes_dir=notes_dir, isbn13=isbn13, goodreads_book_id=goodreads_book_id)
     if existing:
         return existing
 
     vault = Path(vault_path).expanduser()
     rel_dir = Path(notes_dir)
-    title = _slugify_filename(str(metadata.get("title") or "Book"))
-    filename = _slugify_filename(f"{title} ({isbn13})") + ".md"
-    return vault / rel_dir / filename
+    base = _candidate_filename(metadata)
+    path = vault / rel_dir / base
+
+    if not path.exists():
+        return path
+
+    stem = path.stem
+    suffix = path.suffix
+    idx = 2
+    while True:
+        candidate = path.with_name(f"{stem} ({idx}){suffix}")
+        if not candidate.exists():
+            return candidate
+        idx += 1
 
 
 def _upsert_note_core(payload: MetadataDict, vault_path: str, notes_dir: str, target_note: Optional[str]) -> dict:
-    isbn13, metadata, extras, error = _prepare_metadata(payload)
-    if error or not isbn13 or metadata is None or extras is None:
+    isbn13, goodreads_book_id, metadata, extras, error = _prepare_metadata(payload)
+    if error or metadata is None or extras is None:
         return make_result(STAGE, ok=False, error=error or "invalid metadata payload", note_path=None)
 
     note_path = _build_note_path(
         isbn13=isbn13,
+        goodreads_book_id=goodreads_book_id,
         metadata=metadata,
         target_note=target_note,
         vault_path=vault_path,
@@ -281,25 +384,18 @@ def _upsert_note_core(payload: MetadataDict, vault_path: str, notes_dir: str, ta
     )
     note_path.parent.mkdir(parents=True, exist_ok=True)
 
-    auto_block = _render_auto_block(isbn13=isbn13, metadata=metadata, extras=extras)
+    managed = _render_managed_block(isbn13=isbn13, goodreads_book_id=goodreads_book_id, metadata=metadata, extras=extras)
     created = not note_path.exists()
     preserved_user_content = False
 
     if created:
-        new_content = f"{auto_block}\n\n## User Notes\n\n"
+        user_notes = "## User Notes\n"
     else:
         existing = note_path.read_text(encoding="utf-8")
-        has_markers, _prefix, suffix = _split_by_markers(existing)
-        if has_markers:
-            # Keep user-owned content after END marker, regenerate managed block including frontmatter.
-            new_content = f"{auto_block}{suffix}"
-            preserved_user_content = True
-        else:
-            if existing.strip():
-                new_content = f"{auto_block}\n\n{existing}"
-                preserved_user_content = True
-            else:
-                new_content = f"{auto_block}\n\n## User Notes\n\n"
+        user_notes = _extract_user_notes(existing)
+        preserved_user_content = bool(user_notes.strip())
+
+    new_content = managed.rstrip() + "\n\n" + user_notes.strip() + "\n"
 
     existing_content = note_path.read_text(encoding="utf-8") if note_path.exists() else None
     updated = existing_content != new_content
@@ -315,8 +411,10 @@ def _upsert_note_core(payload: MetadataDict, vault_path: str, notes_dir: str, ta
         updated=updated,
         preserved_user_content=preserved_user_content,
         isbn13=isbn13,
+        goodreads_book_id=goodreads_book_id,
         title=metadata["title"],
         status=extras.get("status"),
+        shelf=extras.get("shelf"),
         needs_review=extras.get("needs_review"),
     )
 
@@ -380,17 +478,19 @@ def upsert_note(*args: Any, **kwargs: Any) -> dict:
 def _self_check() -> dict:
     payload = {
         "isbn13": "9780201633610",
+        "shelf": "sci-com",
         "metadata": {
             "title": "Design Patterns",
             "authors": ["Gamma", "Helm", "Johnson", "Vlissides"],
+            "publisher": "Addison-Wesley",
+            "published_date": "1994",
             "source": "self_check",
         },
         "status": "reading",
-        "source_confidence": 0.92,
         "tags": ["software", "patterns"],
     }
-    isbn13, metadata, extras, error = _prepare_metadata(payload)
-    ok = bool(isbn13 and metadata and extras and not error)
+    isbn13, goodreads_book_id, metadata, extras, error = _prepare_metadata(payload)
+    ok = bool((isbn13 or goodreads_book_id) and metadata and extras and not error)
     return make_result(
         STAGE,
         ok=ok,
@@ -399,6 +499,7 @@ def _self_check() -> dict:
             "prepared_isbn13": isbn13,
             "prepared_title": metadata.get("title") if metadata else None,
             "prepared_status": extras.get("status") if extras else None,
+            "prepared_shelf": extras.get("shelf") if extras else None,
         },
     )
 

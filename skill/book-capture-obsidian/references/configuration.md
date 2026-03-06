@@ -5,16 +5,32 @@ Configure paths and behavior with environment variables.
 
 ## Core Paths
 
+`BOOK_CAPTURE_VAULT_PATH` is mandatory for migration commands.
+
 ```bash
 export BOOK_CAPTURE_VAULT_PATH="/path/to/obsidian-vault"
-export BOOK_CAPTURE_NOTES_DIR="Library/Books"
-export BOOK_CAPTURE_DASHBOARD_FILE="Library/Library Dashboard.md"
+export BOOK_CAPTURE_NOTES_DIR="6. Library"
+export BOOK_CAPTURE_DASHBOARD_FILE="6. Library/Library Dashboard.md"
 ```
 
 Optional explicit note target for one-off writes:
 
 ```bash
-export BOOK_CAPTURE_TARGET_NOTE="/path/to/obsidian-vault/Library/Books/Book Name (978...).md"
+export BOOK_CAPTURE_TARGET_NOTE="/path/to/obsidian-vault/6. Library/Book Title - Author - Publisher - 2025.md"
+```
+
+## Goodreads Migration Controls
+
+```bash
+# Enrich all rows with Google Books by default
+export BOOK_CAPTURE_ENABLE_GOOGLE_ENRICH=true
+
+# Delay and retry controls for Google API rate limits
+export BOOK_CAPTURE_GOOGLE_DELAY_MS=400
+export BOOK_CAPTURE_GOOGLE_MAX_RETRIES=5
+
+# Optional folder structure by shelf property
+export BOOK_CAPTURE_GROUP_BY_SHELF=true
 ```
 
 ## Extraction Controls
@@ -50,6 +66,7 @@ export BOOK_CAPTURE_DASHBOARD_TEMPLATE="skill/book-capture-obsidian/assets/templ
 - Barcode primary: `zbarimg`
 - Barcode secondary: `pyzbar`
 - OCR fallback: `pytesseract`
+- Goodreads bulk enrichment: `google_books` (with delay/retry controls)
 
 Behavior:
 - Missing `zbarimg` -> continue with `pyzbar` and/or OCR.

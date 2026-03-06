@@ -106,9 +106,20 @@ def generate_dashboard(vault_path: str, notes_dir: str, dashboard_file: str, tem
     needs_review = 0
 
     for note_path in books_root.rglob("*.md"):
+        if note_path.name == "Library Dashboard.md" or note_path.name.startswith("Series - "):
+            continue
+
         content = note_path.read_text(encoding="utf-8")
         frontmatter = _parse_frontmatter(content)
         if not frontmatter:
+            continue
+
+        # Count only book notes
+        tags = frontmatter.get("tags")
+        is_book = False
+        if isinstance(tags, list):
+            is_book = "book" in [str(t).strip().lower() for t in tags]
+        if not is_book and not frontmatter.get("shelf"):
             continue
 
         total += 1
