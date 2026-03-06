@@ -10,18 +10,20 @@ run_pytest() {
         return 0
     fi
 
-    if command -v python3 >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1 && python3 -c "import pytest" >/dev/null 2>&1; then
         python3 -m pytest "$@"
         return 0
     fi
 
-    if command -v python >/dev/null 2>&1; then
+    if command -v python >/dev/null 2>&1 && python -c "import pytest" >/dev/null 2>&1; then
         python -m pytest "$@"
         return 0
     fi
 
-    echo "ERROR: pytest is not available. Install dev dependencies:" >&2
+    echo "ERROR: pytest is not installed in the active Python environment." >&2
+    echo "Install dev dependencies from repository root:" >&2
     echo "  pip install -r requirements-dev.txt" >&2
+    echo "Then rerun: sh scripts/run_ci_local.sh" >&2
     return 2
 }
 

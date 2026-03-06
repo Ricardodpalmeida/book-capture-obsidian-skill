@@ -125,6 +125,7 @@ sh scripts/package_skill_local.sh --with-security-scan
 - [x] Release readiness documented
 - [x] Commit and push to public GitHub repo
 - [x] Create release/tag (`v1.0.0`)
+- [x] Release assets uploaded (`.skill.tgz` + `.sha256`)
 - [x] GitHub Actions CI workflow configured (`.github/workflows/ci.yml`)
 
 ## Recommendation
