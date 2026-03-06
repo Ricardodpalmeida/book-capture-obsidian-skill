@@ -194,7 +194,7 @@ def _render_managed_block(isbn13: Optional[str], goodreads_book_id: Optional[str
         author_text = ", ".join(authors) if authors else "Unknown author"
         publisher_text = metadata.get("publisher") or "Unknown publisher"
         year_text = str(published_year) if published_year else "unknown year"
-        summary = f"Book by {author_text}, published by {publisher_text} ({year_text})."
+        summary = f"Obra de {author_text}, publicada por {publisher_text} ({year_text})."
 
     frontmatter_lines = [
         "---",
@@ -230,7 +230,7 @@ def _render_managed_block(isbn13: Optional[str], goodreads_book_id: Optional[str
         "",
         f"# {metadata['title']}",
         "",
-        "## Summary",
+        "## Sinopse",
         summary,
     ]
 

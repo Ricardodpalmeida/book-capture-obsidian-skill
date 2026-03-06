@@ -55,14 +55,14 @@ python skill/book-capture-obsidian/scripts/migrate_goodreads_csv.py \
 - `Bookshelves` -> tags + categories
 - Always include tag `book`
 - Add normalized tag `shelf-<exclusive-shelf>`
-- Query Google Books for all rows to enrich summary/publisher/date/metadata
+- Query Google Books for all rows to enrich synopsis/publisher/date/metadata
 
 ## Output Shape
 
 - Filename format: `Title - First Author - Publisher - Year.md`
 - No auto markers (`BOOK_CAPTURE:BEGIN/END AUTO`)
 - No metadata audit boilerplate section
-- Keep `## Summary` with concise description text
+- Keep `## Sinopse` with concise description text
 
 ## Dedup Strategy
 

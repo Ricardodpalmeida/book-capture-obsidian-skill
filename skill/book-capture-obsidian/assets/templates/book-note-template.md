@@ -20,7 +20,7 @@ source_url: {{source_url}}
 
 # {{title}}
 
-## Summary
+## Sinopse
 
 {{summary}}
 
