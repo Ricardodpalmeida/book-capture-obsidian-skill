@@ -171,6 +171,36 @@ def _from_openlibrary(isbn13: str, timeout_sec: int, user_agent: str) -> Tuple[O
     if isinstance(description, dict):
         description = description.get("value")
 
+    # Enrich missing description/subjects from linked work metadata when available.
+    works = book.get("works") if isinstance(book.get("works"), list) else []
+    work_key = None
+    for item in works:
+        if isinstance(item, dict) and isinstance(item.get("key"), str):
+            work_key = item.get("key")
+            break
+
+    if work_key and (not description or not subjects):
+        work_url = f"https://openlibrary.org{work_key}.json" if work_key.startswith("/") else f"https://openlibrary.org/{work_key}.json"
+        try:
+            work_payload = _http_get_json(work_url, timeout_sec=timeout_sec, user_agent=user_agent)
+        except Exception:
+            work_payload = {}
+
+        if not description:
+            work_desc = work_payload.get("description")
+            if isinstance(work_desc, dict):
+                work_desc = work_desc.get("value")
+            if _clean_text(work_desc):
+                description = _clean_text(work_desc)
+
+        if not subjects:
+            work_subjects = work_payload.get("subjects")
+            if isinstance(work_subjects, list):
+                for value in work_subjects:
+                    text = _clean_text(value)
+                    if text:
+                        subjects.append(text)
+
     raw = {
         "title": book.get("title"),
         "authors": authors,
