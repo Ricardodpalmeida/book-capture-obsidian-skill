@@ -2,8 +2,12 @@
 
 ## Final Status
 
-**READY FOR PUBLIC RELEASE** with one explicit runtime prerequisite note:
+**RELEASED (v1.0.0)** with one explicit runtime prerequisite note:
 - OCR/barcode extraction requires system binaries on the target machine (`tesseract`, `zbarimg`, and zbar shared library for `pyzbar`).
+
+Published state:
+- GitHub release/tag: `v1.0.0`
+- ClawHub latest: `1.0.0`
 
 The skill package itself is privacy-safe, machine-agnostic, and CI-clean in this repository.
 
@@ -119,13 +123,17 @@ sh scripts/package_skill_local.sh --with-security-scan
 - [x] No personal data leak patterns found
 - [x] README includes runtime + dev dependencies
 - [x] Release readiness documented
-- [ ] Commit and push to public GitHub repo
-- [ ] Create release/tag
+- [x] Commit and push to public GitHub repo
+- [x] Create release/tag (`v1.0.0`)
+- [x] GitHub Actions CI workflow configured (`.github/workflows/ci.yml`)
 
 ## Recommendation
 
-Proceed to:
-1. commit and push to public GitHub,
-2. publish the skill to ClawHub.
+No release-blocking actions remain for v1.0.0.
 
-The package is release-ready and generic for other machines, with clear dependency setup for OCR/barcode runtime.
+Keep the project in maintenance mode:
+1. let GitHub Actions CI gate future pushes/PRs,
+2. run `sh scripts/run_ci_local.sh` before new tags,
+3. publish a new GitHub/ClawHub version only when feature or fix scope warrants it.
+
+The package remains generic for other machines, with clear dependency setup for OCR/barcode runtime.
