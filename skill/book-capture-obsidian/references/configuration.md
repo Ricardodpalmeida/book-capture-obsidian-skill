@@ -25,6 +25,9 @@ export BOOK_CAPTURE_TARGET_NOTE="/path/to/obsidian-vault/6. Library/Book Title -
 # Enrich all rows with Google Books by default
 export BOOK_CAPTURE_ENABLE_GOOGLE_ENRICH=true
 
+# Optional dedicated Google Books API key (recommended for stable quota)
+export BOOK_CAPTURE_GOOGLE_API_KEY="YOUR_GOOGLE_BOOKS_API_KEY"
+
 # Delay and retry controls for Google API rate limits
 export BOOK_CAPTURE_GOOGLE_DELAY_MS=400
 export BOOK_CAPTURE_GOOGLE_MAX_RETRIES=5

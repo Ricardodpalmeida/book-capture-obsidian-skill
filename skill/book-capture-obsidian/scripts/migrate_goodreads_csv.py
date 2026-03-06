@@ -115,6 +115,7 @@ def _google_books_enrich(
     timeout_sec: int,
     delay_ms: int,
     max_retries: int,
+    api_key: str,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
     requests = _get_requests_module()
 
@@ -132,6 +133,8 @@ def _google_books_enrich(
         return None, None, "missing query for google books enrichment"
 
     url = f"https://www.googleapis.com/books/v1/volumes?q={quote_plus(query)}&maxResults=1"
+    if api_key.strip():
+        url = f"{url}&key={quote_plus(api_key.strip())}"
 
     attempt = 0
     while True:
@@ -216,6 +219,7 @@ def _build_payload(
     google_delay_ms: int,
     google_max_retries: int,
     enrich_google: bool,
+    google_api_key: str,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     title = _get_value(row, header_map, "Title")
     author = _get_value(row, header_map, "Author")
@@ -278,6 +282,7 @@ def _build_payload(
             timeout_sec=timeout_sec,
             delay_ms=google_delay_ms,
             max_retries=google_max_retries,
+            api_key=google_api_key,
         )
         if meta_enriched:
             for k, v in meta_enriched.items():
@@ -305,6 +310,7 @@ def migrate_csv(
     timeout_sec = get_env_int("BOOK_CAPTURE_HTTP_TIMEOUT_SECONDS", 12, minimum=2)
     google_delay_ms = get_env_int("BOOK_CAPTURE_GOOGLE_DELAY_MS", 400, minimum=50)
     google_max_retries = get_env_int("BOOK_CAPTURE_GOOGLE_MAX_RETRIES", 5, minimum=0)
+    google_api_key = get_env_str("BOOK_CAPTURE_GOOGLE_API_KEY", "")
 
     created = 0
     updated = 0
@@ -331,6 +337,7 @@ def migrate_csv(
                 google_delay_ms=google_delay_ms,
                 google_max_retries=google_max_retries,
                 enrich_google=enrich_google,
+                google_api_key=google_api_key,
             )
             if err or payload is None:
                 skipped += 1
@@ -424,6 +431,7 @@ def _self_check() -> Dict[str, Any]:
         google_delay_ms=100,
         google_max_retries=0,
         enrich_google=False,
+        google_api_key="",
     )
 
     ok = sample_payload is not None and err is None and sample_payload.get("status") == "finished"
