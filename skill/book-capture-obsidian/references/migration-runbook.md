@@ -47,7 +47,7 @@ python skill/book-capture-obsidian/scripts/migrate_goodreads_csv.py \
 ## Mapping Rules
 
 - `Title` -> note title
-- `Author` -> `authors`
+- `Author` -> `author`
 - `ISBN13` / `ISBN` -> `isbn_13` (when available)
 - `Book Id` -> `goodreads_book_id` (fallback identity key)
 - `Exclusive Shelf` -> `shelf` property

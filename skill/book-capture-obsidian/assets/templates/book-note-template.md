@@ -1,21 +1,23 @@
 ---
 title: "{{title}}"
-authors:
+author:
   - "{{primary_author}}"
+publisher: {{publisher}}
+year: {{published_year}}
+published_date: {{published_date}}
 isbn_10: {{isbn_10}}
 isbn_13: {{isbn_13}}
-publisher: {{publisher}}
-published_year: {{published_year}}
+goodreads_book_id: {{goodreads_book_id}}
+cover: {{cover_image}}
+genre: {{genre}}
+shelf: {{shelf}}
 status: {{status}}
-rating: {{rating}}
-started: {{started}}
-finished: {{finished}}
+date_started: {{started}}
+date_read: {{finished}}
 source: {{source}}
-source_confidence: {{source_confidence}}
+source_url: {{source_url}}
 needs_review: {{needs_review}}
 tags: {{tags}}
-cover: {{cover_image}}
-source_url: {{source_url}}
 ---
 
 # {{title}}
@@ -39,9 +41,3 @@ source_url: {{source_url}}
 ## Notes
 
 -
-
-## Metadata Audit
-
-- Last ingestion source: {{source}}
-- Last ingestion confidence: {{source_confidence}}
-- Review required: {{needs_review}}

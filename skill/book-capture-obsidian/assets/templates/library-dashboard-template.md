@@ -11,8 +11,8 @@
 ## Recently Added
 
 ```dataview
-TABLE authors, status, rating
-FROM "Books"
+TABLE author, status, shelf, date_read
+FROM "6. Library"
 SORT file.ctime DESC
 LIMIT 20
 ```
@@ -20,8 +20,8 @@ LIMIT 20
 ## Currently Reading
 
 ```dataview
-TABLE authors, rating
-FROM "Books"
+TABLE author, shelf, year
+FROM "6. Library"
 WHERE status = "reading"
 SORT file.mtime DESC
 ```
@@ -29,8 +29,8 @@ SORT file.mtime DESC
 ## Needs Review
 
 ```dataview
-TABLE authors, source_confidence
-FROM "Books"
+TABLE author, source, shelf
+FROM "6. Library"
 WHERE needs_review = true
-SORT source_confidence ASC
+SORT file.mtime DESC
 ```

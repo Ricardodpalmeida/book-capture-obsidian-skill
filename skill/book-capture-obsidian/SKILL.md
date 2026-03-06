@@ -1,13 +1,6 @@
 ---
 name: book-capture-obsidian
 description: Capture and normalize book metadata into Obsidian Markdown notes from photos or Goodreads CSV exports. Use for barcode and OCR ISBN extraction, metadata enrichment, idempotent note upsert, bulk migration, and dashboard generation.
-metadata:
-  {
-    "openclaw":
-      {
-        "requires": { "bins": ["python3"] },
-      },
-  }
 ---
 
 # Book Capture Obsidian

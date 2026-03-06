@@ -189,6 +189,7 @@ def _render_managed_block(isbn13: Optional[str], goodreads_book_id: Optional[str
     authors = metadata.get("authors") or []
     published_year = _parse_year_from_date(metadata.get("published_date"))
     tags = extras.get("tags") or []
+    genre = [t for t in tags if str(t).strip() and str(t).strip() != "book" and not str(t).strip().startswith("shelf-")]
     summary = metadata.get("description")
     if not summary:
         author_text = ", ".join(authors) if authors else "Unknown author"
@@ -199,21 +200,23 @@ def _render_managed_block(isbn13: Optional[str], goodreads_book_id: Optional[str
     frontmatter_lines = [
         "---",
         f"title: {_yaml_scalar(metadata['title'])}",
-        "authors:",
+        "author:",
         _yaml_list(authors),
         f"publisher: {_yaml_scalar(metadata.get('publisher'))}",
+        f"year: {_yaml_scalar(published_year)}",
         f"published_date: {_yaml_scalar(metadata.get('published_date'))}",
-        f"published_year: {_yaml_scalar(published_year)}",
         f"isbn_10: {_yaml_scalar(isbn10)}",
         f"isbn_13: {_yaml_scalar(isbn13)}",
         f"goodreads_book_id: {_yaml_scalar(goodreads_book_id)}",
+        f"cover: {_yaml_scalar(metadata.get('cover_image'))}",
+        "genre:",
+        _yaml_list(genre),
         f"shelf: {_yaml_scalar(extras.get('shelf'))}",
         f"status: {_yaml_scalar(extras.get('status'))}",
-        f"started: {_yaml_scalar(extras.get('started'))}",
-        f"finished: {_yaml_scalar(extras.get('finished'))}",
+        f"date_started: {_yaml_scalar(extras.get('started'))}",
+        f"date_read: {_yaml_scalar(extras.get('finished'))}",
         f"source: {_yaml_scalar(metadata.get('source'))}",
         f"source_url: {_yaml_scalar(metadata.get('source_url'))}",
-        f"cover: {_yaml_scalar(metadata.get('cover_image'))}",
         f"needs_review: {_yaml_scalar(extras.get('needs_review'))}",
         "tags:",
         _yaml_list(tags),
