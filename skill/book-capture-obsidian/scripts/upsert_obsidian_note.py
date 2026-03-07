@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import sys
@@ -23,9 +24,67 @@ STAGE = "upsert_obsidian_note"
 BEGIN_MARKER = "<!-- BOOK_CAPTURE:BEGIN AUTO -->"
 END_MARKER = "<!-- BOOK_CAPTURE:END AUTO -->"
 
-VALID_STATUS = {"inbox", "to-read", "reading", "finished", "paused", "dropped", "dnf", "reference"}
-
 MetadataDict = Dict[str, Any]
+
+SHELF_BASE_TAGS: Dict[str, List[str]] = {
+    "bios": ["biography"],
+    "comics-manga-drawings": ["graphic-novel"],
+    "cooking": ["cooking"],
+    "cultura": ["culture"],
+    "distopias": ["dystopia", "fiction"],
+    "fantasia": ["fantasy", "fiction"],
+    "fiction-general": ["fiction", "literary-fiction"],
+    "historia-mitologia": ["history"],
+    "horror-mistery": ["horror", "mystery", "fiction"],
+    "mgmt-econ-psych": ["management", "economics", "psychology"],
+    "mistério": ["mystery", "fiction"],
+    "other": ["non-fiction"],
+    "philosophy-essays": ["philosophy", "essays"],
+    "politics-scipol": ["politics", "political-science"],
+    "read": ["reading-list"],
+    "romances-de-epoca": ["romance", "historical-fiction"],
+    "sci-com": ["science", "technology"],
+    "sci-fi": ["science-fiction"],
+    "self-help": ["self-help", "personal-development"],
+    "to-read": ["to-read"],
+    "travel": ["travel"],
+}
+
+SEMANTIC_KEYWORD_TAGS: List[Tuple[str, str]] = [
+    ("science fiction", "science-fiction"),
+    ("sci fi", "science-fiction"),
+    ("space opera", "space-opera"),
+    ("cyberpunk", "cyberpunk"),
+    ("dystopia", "dystopia"),
+    ("post apocalyptic", "post-apocalyptic"),
+    ("time travel", "time-travel"),
+    ("first contact", "first-contact"),
+    ("military science fiction", "military-sci-fi"),
+    ("artificial intelligence", "ai-robotics"),
+    ("robot", "ai-robotics"),
+    ("manga", "manga"),
+    ("graphic novel", "graphic-novel"),
+    ("comics", "graphic-novel"),
+    ("fantasy", "fantasy"),
+    ("horror", "horror"),
+    ("mystery", "mystery"),
+    ("thriller", "thriller"),
+    ("biography", "biography"),
+    ("autobiography", "memoir"),
+    ("memoir", "memoir"),
+    ("philosophy", "philosophy"),
+    ("politics", "politics"),
+    ("economics", "economics"),
+    ("management", "management"),
+    ("psychology", "psychology"),
+    ("history", "history"),
+    ("mythology", "mythology"),
+    ("culture", "culture"),
+    ("science", "science"),
+    ("technology", "technology"),
+    ("innovation", "innovation"),
+    ("ethics", "ethics"),
+]
 
 
 def _slugify_filename(value: str) -> str:
@@ -75,6 +134,68 @@ def _normalize_tag(value: str) -> str:
     while "--" in tag:
         tag = tag.replace("--", "-")
     return tag.strip("-")
+
+
+def _normalize_text(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or "")).lower()
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"[^a-z0-9\s-]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _dedupe_preserve(values: List[str]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for value in values:
+        if not value:
+            continue
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+
+def _clean_summary(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    text = html.unescape(text)
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = text.strip()
+    if len(text) > 1400:
+        text = text[:1397].rstrip() + "..."
+    return text or None
+
+
+def _infer_semantic_tags(title: str, categories: List[str], description: Optional[str], shelf_norm: str) -> List[str]:
+    tags: List[str] = []
+    tags.extend(SHELF_BASE_TAGS.get(shelf_norm, []))
+
+    text_parts = [title, " ".join(categories), description or ""]
+    haystack = _normalize_text(" ".join(text_parts))
+
+    for keyword, tag in SEMANTIC_KEYWORD_TAGS:
+        if keyword in haystack:
+            tags.append(tag)
+
+    # Keep category-derived tags, but bounded to avoid noise.
+    for category in categories:
+        tag = _normalize_tag(category)
+        if tag:
+            tags.append(tag)
+
+    series_name, _series_index = _series_info_from_title(title)
+    if series_name:
+        series_slug = _normalize_tag(series_name)
+        if series_slug:
+            tags.append(f"series-{series_slug}")
+
+    return _dedupe_preserve([_normalize_tag(t) for t in tags if _normalize_tag(t)])
 
 
 def _parse_year_from_date(value: Any) -> Optional[int]:
@@ -145,8 +266,10 @@ def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[st
 
     isbn_value = (
         payload.get("isbn13")
+        or payload.get("isbn_13")
         or payload.get("isbn")
         or metadata.get("isbn13")
+        or metadata.get("isbn_13")
         or metadata.get("isbn")
     )
     isbn13 = normalize_isbn(str(isbn_value or ""))
@@ -160,32 +283,30 @@ def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[st
     ).strip() or None
 
     if not isbn13 and not goodreads_book_id:
-        return None, None, None, None, "metadata payload missing valid isbn and goodreads_book_id"
+        return None, None, None, None, "metadata payload missing valid isbn or legacy goodreads id"
 
     categories_raw = _as_str_list(metadata.get("categories") or [])
-    categories: List[str] = []
-    for value in categories_raw:
-        tag = _normalize_tag(value)
-        if tag and tag not in categories:
-            categories.append(tag)
+    categories = _dedupe_preserve([_normalize_tag(value) for value in categories_raw if _normalize_tag(value)])
+
+    published_date = str(metadata.get("published_date") or "").strip() or None
+    explicit_year = _parse_year_from_date(metadata.get("year") or payload.get("year"))
+    parsed_year = _parse_year_from_date(published_date)
+    year = explicit_year or parsed_year
 
     clean_metadata: MetadataDict = {
         "authors": _as_str_list(metadata.get("authors") or []),
         "categories": categories,
-        "cover_image": _safe_http_url(metadata.get("cover_image")),
-        "description": str(metadata.get("description") or "").strip() or None,
+        "cover_image": _safe_http_url(metadata.get("cover_image") or payload.get("cover")),
+        "description": _clean_summary(metadata.get("description")),
         "language": str(metadata.get("language") or "").strip() or None,
         "page_count": metadata.get("page_count"),
-        "published_date": str(metadata.get("published_date") or "").strip() or None,
+        "published_date": published_date,
         "publisher": str(metadata.get("publisher") or "").strip() or None,
         "source": str(metadata.get("source") or payload.get("source") or "manual").strip() or "manual",
         "source_url": _safe_http_url(metadata.get("source_url")),
         "title": title,
+        "year": year,
     }
-
-    # Only keep cover image when it came from API metadata
-    if clean_metadata.get("source") not in {"google_books", "openlibrary"}:
-        clean_metadata["cover_image"] = None
 
     try:
         if clean_metadata["page_count"] is not None:
@@ -196,11 +317,18 @@ def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[st
         clean_metadata["page_count"] = None
 
     shelf = str(payload.get("shelf") or goodreads.get("exclusive_shelf") or "inbox").strip().lower() or "inbox"
-
     shelf_norm = _normalize_tag(shelf)
+
+    input_tags = _dedupe_preserve([_normalize_tag(value) for value in _as_str_list(payload.get("tags") or []) if _normalize_tag(value)])
+    semantic_tags = _infer_semantic_tags(
+        title=title,
+        categories=categories_raw,
+        description=clean_metadata.get("description"),
+        shelf_norm=shelf_norm,
+    )
+
     tags: List[str] = []
-    for value in _as_str_list(payload.get("tags") or []):
-        tag = _normalize_tag(value)
+    for tag in input_tags + semantic_tags:
         if not tag:
             continue
         if tag == shelf_norm or tag == f"shelf-{shelf_norm}":
@@ -208,18 +336,11 @@ def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[st
         if tag not in tags:
             tags.append(tag)
 
-    for category in clean_metadata.get("categories") or []:
-        if category and category != shelf_norm and category not in tags:
-            tags.append(category)
-
     if "book" not in tags:
         tags.insert(0, "book")
 
-    series_name, _series_index = _series_info_from_title(title)
-    if series_name:
-        tag = _series_tag(series_name)
-        if tag and tag not in tags:
-            tags.append(tag)
+    # Keep tags rich but bounded and deterministic.
+    tags = tags[:12]
 
     extras: MetadataDict = {
         "shelf": shelf,
@@ -229,12 +350,19 @@ def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[st
     return isbn13, goodreads_book_id, clean_metadata, extras, None
 
 
-def _render_managed_block(isbn13: Optional[str], goodreads_book_id: Optional[str], metadata: MetadataDict, extras: MetadataDict) -> str:
+def _render_managed_block(
+    isbn13: Optional[str],
+    goodreads_book_id: Optional[str],
+    metadata: MetadataDict,
+    extras: MetadataDict,
+    related_links: Optional[List[str]] = None,
+) -> str:
+    _ = goodreads_book_id  # legacy compatibility; no longer written to frontmatter
     isbn10 = isbn13_to_isbn10(isbn13) if isbn13 else None
     authors = metadata.get("authors") or []
-    published_year = _parse_year_from_date(metadata.get("published_date"))
+    published_year = metadata.get("year") or _parse_year_from_date(metadata.get("published_date"))
     tags = extras.get("tags") or []
-    summary = metadata.get("description")
+    summary = _clean_summary(metadata.get("description"))
     if not summary:
         author_text = ", ".join(authors) if authors else "Unknown author"
         publisher_text = metadata.get("publisher") or "Unknown publisher"
@@ -268,6 +396,14 @@ def _render_managed_block(isbn13: Optional[str], goodreads_book_id: Optional[str
         "## Sinopse",
         summary,
     ]
+
+    links = [link for link in (related_links or []) if link]
+    if links:
+        body_lines.extend([
+            "",
+            "## Related",
+            *[f"- {link}" for link in links],
+        ])
 
     return "\n".join(body_lines).strip() + "\n"
 
@@ -354,16 +490,14 @@ def _find_existing_note(vault_path: str, notes_dir: str, isbn13: Optional[str], 
 def _candidate_filename(metadata: MetadataDict) -> str:
     title = _slugify_filename(str(metadata.get("title") or "Book"))
     author = _slugify_filename((metadata.get("authors") or ["Unknown Author"])[0])
-    publisher = _slugify_filename(str(metadata.get("publisher") or ""))
-    year = _parse_year_from_date(metadata.get("published_date"))
+    publisher = _slugify_filename(str(metadata.get("publisher") or "Unknown Publisher"))
+    year = metadata.get("year") or _parse_year_from_date(metadata.get("published_date"))
+    year_text = str(year) if year else "Unknown Year"
 
-    parts = [title, author]
-    if publisher:
-        parts.append(publisher)
-    if year:
-        parts.append(str(year))
-
-    filename = " - ".join(parts).strip()
+    core = f"{title} - {author}".strip()
+    suffix = f"({publisher}, {year_text})".strip()
+    filename = f"{core} {suffix}".strip()
+    filename = re.sub(r"\s+", " ", filename)
     return (filename or "Book") + ".md"
 
 
@@ -420,6 +554,116 @@ def _is_within_vault(note_path: Path, vault_path: str) -> bool:
     vault_root = Path(vault_path).expanduser().resolve()
     note_abs = note_path.expanduser().resolve()
     return note_abs == vault_root or vault_root in note_abs.parents
+
+
+def _wiki_link(path: Path, vault_root: Path) -> str:
+    rel = path.resolve().relative_to(vault_root.resolve())
+    no_ext = str(rel.with_suffix(""))
+    return f"[[{no_ext}]]"
+
+
+def _parse_frontmatter_quick(path: Path) -> MetadataDict:
+    data: MetadataDict = {"title": None, "author": [], "tags": []}
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return data
+    if not text.startswith("---\n"):
+        return data
+    end = text.find("\n---\n", 4)
+    if end == -1:
+        return data
+    fm = text[4:end]
+
+    # title
+    m_title = re.search(r"^title:\s*(.+)$", fm, flags=re.M)
+    if m_title:
+        data["title"] = m_title.group(1).strip().strip('"')
+
+    # author list
+    m_author_block = re.search(r"^author:\s*\n((?:\s*-\s*.+\n?)*)", fm, flags=re.M)
+    authors: List[str] = []
+    if m_author_block:
+        for line in m_author_block.group(1).splitlines():
+            mm = re.match(r"\s*-\s*(.+)", line)
+            if mm:
+                authors.append(mm.group(1).strip().strip('"'))
+    data["author"] = authors
+
+    # tags list
+    m_tags_block = re.search(r"^tags:\s*\n((?:\s*-\s*.+\n?)*)", fm, flags=re.M)
+    tags: List[str] = []
+    if m_tags_block:
+        for line in m_tags_block.group(1).splitlines():
+            mm = re.match(r"\s*-\s*(.+)", line)
+            if mm:
+                tags.append(_normalize_tag(mm.group(1).strip().strip('"')))
+    data["tags"] = [t for t in tags if t]
+    return data
+
+
+def _collect_related_links(
+    note_path: Path,
+    vault_path: str,
+    notes_dir: str,
+    metadata: MetadataDict,
+    tags: List[str],
+    limit_library: int = 4,
+    limit_learnings: int = 2,
+) -> List[str]:
+    vault_root = Path(vault_path).expanduser().resolve()
+    library_root = (vault_root / notes_dir).resolve()
+    learn_root = (vault_root / "5. Learnings").resolve()
+
+    current_title = _normalize_text(metadata.get("title") or "")
+    current_authors = [_normalize_text(a) for a in (metadata.get("authors") or []) if _normalize_text(a)]
+    current_tags = {_normalize_tag(t) for t in tags if _normalize_tag(t) and _normalize_tag(t) != "book"}
+
+    library_scored: List[Tuple[float, Path]] = []
+    if library_root.exists():
+        for candidate in library_root.rglob("*.md"):
+            try:
+                if candidate.resolve() == note_path.resolve():
+                    continue
+            except Exception:
+                continue
+            parsed = _parse_frontmatter_quick(candidate)
+            cand_title = _normalize_text(parsed.get("title") or candidate.stem)
+            cand_authors = [_normalize_text(a) for a in (parsed.get("author") or []) if _normalize_text(a)]
+            cand_tags = {_normalize_tag(t) for t in (parsed.get("tags") or []) if _normalize_tag(t)}
+
+            score = 0.0
+            if current_authors and cand_authors:
+                if set(current_authors) & set(cand_authors):
+                    score += 4.0
+            if current_tags and cand_tags:
+                score += min(2.0, float(len(current_tags & cand_tags)) * 0.6)
+            if current_title and cand_title and current_title != cand_title:
+                overlap = len(set(current_title.split()) & set(cand_title.split()))
+                if overlap >= 2:
+                    score += 0.8
+            if score > 0:
+                library_scored.append((score, candidate))
+
+    library_scored.sort(key=lambda x: (-x[0], str(x[1]).lower()))
+    library_links = [_wiki_link(path, vault_root) for _, path in library_scored[:limit_library]]
+
+    learning_links: List[str] = []
+    if learn_root.exists() and current_tags:
+        learning_scored: List[Tuple[float, Path]] = []
+        tag_tokens = set()
+        for tag in current_tags:
+            tag_tokens.update(_normalize_text(tag).split())
+        for candidate in learn_root.rglob("*.md"):
+            name_tokens = set(_normalize_text(candidate.stem).split())
+            overlap = len(tag_tokens & name_tokens)
+            if overlap:
+                learning_scored.append((float(overlap), candidate))
+        learning_scored.sort(key=lambda x: (-x[0], str(x[1]).lower()))
+        learning_links = [_wiki_link(path, vault_root) for _, path in learning_scored[:limit_learnings]]
+
+    out = _dedupe_preserve(library_links + learning_links)
+    return out
 
 
 def _upsert_note_core(payload: MetadataDict, vault_path: str, notes_dir: str, target_note: Optional[str]) -> dict:
@@ -482,7 +726,21 @@ def _upsert_note_core(payload: MetadataDict, vault_path: str, notes_dir: str, ta
     note_path = note_path.expanduser().resolve()
     note_path.parent.mkdir(parents=True, exist_ok=True)
 
-    managed = _render_managed_block(isbn13=isbn13, goodreads_book_id=goodreads_book_id, metadata=metadata, extras=extras)
+    related_links = _collect_related_links(
+        note_path=note_path,
+        vault_path=vault_path,
+        notes_dir=notes_dir,
+        metadata=metadata,
+        tags=extras.get("tags") or [],
+    )
+
+    managed = _render_managed_block(
+        isbn13=isbn13,
+        goodreads_book_id=goodreads_book_id,
+        metadata=metadata,
+        extras=extras,
+        related_links=related_links,
+    )
     created = not note_path.exists()
     preserved_user_content = False
 
@@ -509,11 +767,10 @@ def _upsert_note_core(payload: MetadataDict, vault_path: str, notes_dir: str, ta
         updated=updated,
         preserved_user_content=preserved_user_content,
         isbn13=isbn13,
-        goodreads_book_id=goodreads_book_id,
         title=metadata["title"],
-        status=extras.get("status"),
         shelf=extras.get("shelf"),
-        needs_review=extras.get("needs_review"),
+        tags=extras.get("tags") or [],
+        related_links=related_links,
         moved=moved,
         previous_note_path=previous_note_path,
     )
@@ -585,8 +842,8 @@ def _self_check() -> dict:
             "publisher": "Addison-Wesley",
             "published_date": "1994",
             "source": "self_check",
+            "description": "Classic software engineering patterns reference.",
         },
-        "status": "reading",
         "tags": ["software", "patterns"],
     }
     isbn13, goodreads_book_id, metadata, extras, error = _prepare_metadata(payload)
@@ -598,8 +855,9 @@ def _self_check() -> dict:
         checks={
             "prepared_isbn13": isbn13,
             "prepared_title": metadata.get("title") if metadata else None,
-            "prepared_status": extras.get("status") if extras else None,
+            "prepared_year": metadata.get("year") if metadata else None,
             "prepared_shelf": extras.get("shelf") if extras else None,
+            "has_book_tag": "book" in (extras.get("tags") or []) if extras else False,
         },
     )
 
