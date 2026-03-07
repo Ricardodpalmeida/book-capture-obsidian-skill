@@ -66,6 +66,19 @@ def _clean_str_list(values: Any) -> List[str]:
     return out
 
 
+def _best_google_cover(image_links: Any) -> Optional[str]:
+    if not isinstance(image_links, dict):
+        return None
+    for key in ["extraLarge", "large", "medium", "small", "thumbnail", "smallThumbnail"]:
+        value = image_links.get(key)
+        if isinstance(value, str) and value.strip():
+            url = value.replace("http://", "https://")
+            if "google" in url and "zoom=1" in url:
+                url = url.replace("zoom=1", "zoom=2")
+            return url
+    return None
+
+
 def _normalize_metadata(raw: MetadataDict, source: str) -> MetadataDict:
     """Normalize provider-specific data to a stable metadata contract."""
     authors = _clean_str_list(raw.get("authors"))
@@ -122,7 +135,7 @@ def _from_google_books(isbn13: str, timeout_sec: int, user_agent: str) -> Tuple[
         "page_count": volume.get("pageCount"),
         "language": volume.get("language"),
         "categories": volume.get("categories") or [],
-        "cover_image": (volume.get("imageLinks") or {}).get("thumbnail") if isinstance(volume.get("imageLinks"), dict) else None,
+        "cover_image": _best_google_cover(volume.get("imageLinks")),
         "source_url": volume.get("infoLink"),
     }
     metadata = _normalize_metadata(raw, source="google_books")

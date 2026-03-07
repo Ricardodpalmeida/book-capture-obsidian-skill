@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -28,11 +29,26 @@ MetadataDict = Dict[str, Any]
 
 
 def _slugify_filename(value: str) -> str:
-    value = (value or "Book").strip()
-    value = re.sub(r"[\\/:*?\"<>|]", " ", value)
-    value = re.sub(r"\s+", " ", value).strip()
-    value = value.rstrip(".")
-    return value or "Book"
+    text = unicodedata.normalize("NFKC", str(value or "Book")).strip()
+    if not text:
+        text = "Book"
+
+    out_chars: List[str] = []
+    for char in text:
+        if char.isspace():
+            out_chars.append(" ")
+            continue
+
+        category = unicodedata.category(char)
+        if category and category[0] in {"L", "N", "M"}:
+            out_chars.append(char)
+        else:
+            out_chars.append(" ")
+
+    clean = "".join(out_chars)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    clean = clean.rstrip(".")
+    return clean or "Book"
 
 
 def _as_str_list(values: Any) -> List[str]:
@@ -46,6 +62,19 @@ def _as_str_list(values: Any) -> List[str]:
             seen.add(text)
             out.append(text)
     return out
+
+
+def _normalize_tag(value: str) -> str:
+    tag = (value or "").strip().lower()
+    if not tag:
+        return ""
+    tag = tag.replace("&", " and ")
+    for token in ["/", "\\", "(", ")", "[", "]", "{", "}", ",", ":", ";", "!", "?", "'", '"', "`"]:
+        tag = tag.replace(token, " ")
+    tag = "-".join(tag.split())
+    while "--" in tag:
+        tag = tag.replace("--", "-")
+    return tag.strip("-")
 
 
 def _parse_year_from_date(value: Any) -> Optional[int]:
@@ -80,6 +109,9 @@ def _yaml_list(values: List[str]) -> str:
 def _safe_http_url(value: Any) -> Optional[str]:
     text = str(value or "").strip()
     if text.startswith("http://") or text.startswith("https://"):
+        text = text.replace("http://", "https://")
+        if "google" in text and "zoom=1" in text:
+            text = text.replace("zoom=1", "zoom=2")
         return text
     return None
 
@@ -90,6 +122,11 @@ def _series_info_from_title(title: str) -> Tuple[Optional[str], Optional[str]]:
     if not m:
         return None, None
     return m.group(1).strip(), m.group(2).strip()
+
+
+def _series_tag(value: str) -> str:
+    text = re.sub(r"[^A-Za-z0-9]+", "", str(value or "").lower())
+    return text.strip()
 
 
 def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[str], Optional[MetadataDict], Optional[MetadataDict], Optional[str]]:
@@ -125,9 +162,16 @@ def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[st
     if not isbn13 and not goodreads_book_id:
         return None, None, None, None, "metadata payload missing valid isbn and goodreads_book_id"
 
+    categories_raw = _as_str_list(metadata.get("categories") or [])
+    categories: List[str] = []
+    for value in categories_raw:
+        tag = _normalize_tag(value)
+        if tag and tag not in categories:
+            categories.append(tag)
+
     clean_metadata: MetadataDict = {
         "authors": _as_str_list(metadata.get("authors") or []),
-        "categories": _as_str_list(metadata.get("categories") or []),
+        "categories": categories,
         "cover_image": _safe_http_url(metadata.get("cover_image")),
         "description": str(metadata.get("description") or "").strip() or None,
         "language": str(metadata.get("language") or "").strip() or None,
@@ -151,34 +195,35 @@ def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[st
     except Exception:
         clean_metadata["page_count"] = None
 
-    status = str(payload.get("status") or "to-read").strip().lower()
-    if status not in VALID_STATUS:
-        status = "to-read"
+    shelf = str(payload.get("shelf") or goodreads.get("exclusive_shelf") or "inbox").strip().lower() or "inbox"
 
-    shelf = str(payload.get("shelf") or goodreads.get("exclusive_shelf") or status).strip().lower() or status
+    shelf_norm = _normalize_tag(shelf)
+    tags: List[str] = []
+    for value in _as_str_list(payload.get("tags") or []):
+        tag = _normalize_tag(value)
+        if not tag:
+            continue
+        if tag == shelf_norm or tag == f"shelf-{shelf_norm}":
+            continue
+        if tag not in tags:
+            tags.append(tag)
 
-    tags = _as_str_list(payload.get("tags") or [])
     for category in clean_metadata.get("categories") or []:
-        if category not in tags:
+        if category and category != shelf_norm and category not in tags:
             tags.append(category)
+
     if "book" not in tags:
         tags.insert(0, "book")
 
-    series_name, series_index = _series_info_from_title(title)
+    series_name, _series_index = _series_info_from_title(title)
     if series_name:
-        series_tag = f"series-{_slugify_filename(series_name).lower().replace(' ', '-') }"
-        if series_tag not in tags:
-            tags.append(series_tag)
+        tag = _series_tag(series_name)
+        if tag and tag not in tags:
+            tags.append(tag)
 
     extras: MetadataDict = {
-        "status": status,
         "shelf": shelf,
-        "needs_review": bool(payload.get("needs_review", False)),
         "tags": tags,
-        "started": str(payload.get("started") or "").strip() or None,
-        "finished": str(payload.get("finished") or "").strip() or None,
-        "series_name": series_name,
-        "series_index": series_index,
     }
 
     return isbn13, goodreads_book_id, clean_metadata, extras, None
@@ -189,7 +234,6 @@ def _render_managed_block(isbn13: Optional[str], goodreads_book_id: Optional[str
     authors = metadata.get("authors") or []
     published_year = _parse_year_from_date(metadata.get("published_date"))
     tags = extras.get("tags") or []
-    genre = [t for t in tags if str(t).strip() and str(t).strip() != "book" and not str(t).strip().startswith("shelf-")]
     summary = metadata.get("description")
     if not summary:
         author_text = ", ".join(authors) if authors else "Unknown author"
@@ -204,27 +248,15 @@ def _render_managed_block(isbn13: Optional[str], goodreads_book_id: Optional[str
         _yaml_list(authors),
         f"publisher: {_yaml_scalar(metadata.get('publisher'))}",
         f"year: {_yaml_scalar(published_year)}",
-        f"published_date: {_yaml_scalar(metadata.get('published_date'))}",
         f"isbn_10: {_yaml_scalar(isbn10)}",
         f"isbn_13: {_yaml_scalar(isbn13)}",
-        f"goodreads_book_id: {_yaml_scalar(goodreads_book_id)}",
         f"cover: {_yaml_scalar(metadata.get('cover_image'))}",
-        "genre:",
-        _yaml_list(genre),
         f"shelf: {_yaml_scalar(extras.get('shelf'))}",
-        f"status: {_yaml_scalar(extras.get('status'))}",
-        f"date_started: {_yaml_scalar(extras.get('started'))}",
-        f"date_read: {_yaml_scalar(extras.get('finished'))}",
         f"source: {_yaml_scalar(metadata.get('source'))}",
         f"source_url: {_yaml_scalar(metadata.get('source_url'))}",
-        f"needs_review: {_yaml_scalar(extras.get('needs_review'))}",
         "tags:",
         _yaml_list(tags),
     ]
-
-    if extras.get("series_name"):
-        frontmatter_lines.append(f"series: {_yaml_scalar(extras.get('series_name'))}")
-        frontmatter_lines.append(f"series_index: {_yaml_scalar(extras.get('series_index'))}")
 
     frontmatter_lines.append("---")
 
@@ -236,16 +268,6 @@ def _render_managed_block(isbn13: Optional[str], goodreads_book_id: Optional[str
         "## Sinopse",
         summary,
     ]
-
-    if extras.get("series_name"):
-        body_lines.extend(
-            [
-                "",
-                "## Collection",
-                f"- Series: [[Series - {extras['series_name']}]]",
-                f"- Volume: {extras.get('series_index') or 'N/A'}",
-            ]
-        )
 
     return "\n".join(body_lines).strip() + "\n"
 
@@ -341,7 +363,35 @@ def _candidate_filename(metadata: MetadataDict) -> str:
     if year:
         parts.append(str(year))
 
-    return _slugify_filename(" - ".join(parts)) + ".md"
+    filename = " - ".join(parts).strip()
+    return (filename or "Book") + ".md"
+
+
+def _same_path(path_a: Path, path_b: Path) -> bool:
+    return path_a.expanduser().resolve() == path_b.expanduser().resolve()
+
+
+def _next_available_note_path(path: Path, ignore_path: Optional[Path] = None) -> Path:
+    path = path.expanduser()
+    ignore_resolved = ignore_path.expanduser().resolve() if ignore_path else None
+
+    def _is_available(candidate: Path) -> bool:
+        candidate_resolved = candidate.expanduser().resolve()
+        if ignore_resolved is not None and candidate_resolved == ignore_resolved:
+            return True
+        return not candidate.exists()
+
+    if _is_available(path):
+        return path
+
+    stem = path.stem
+    suffix = path.suffix
+    idx = 2
+    while True:
+        candidate = path.with_name(f"{stem} ({idx}){suffix}")
+        if _is_available(candidate):
+            return candidate
+        idx += 1
 
 
 def _build_note_path(
@@ -351,30 +401,19 @@ def _build_note_path(
     target_note: Optional[str],
     vault_path: str,
     notes_dir: str,
-) -> Path:
+) -> Tuple[Path, Optional[Path]]:
     if target_note:
-        return Path(target_note).expanduser()
+        return Path(target_note).expanduser(), None
 
     existing = _find_existing_note(vault_path=vault_path, notes_dir=notes_dir, isbn13=isbn13, goodreads_book_id=goodreads_book_id)
     if existing:
-        return existing
+        canonical = existing.with_name(_candidate_filename(metadata))
+        return _next_available_note_path(canonical, ignore_path=existing), existing
 
     vault = Path(vault_path).expanduser()
     rel_dir = Path(notes_dir)
-    base = _candidate_filename(metadata)
-    path = vault / rel_dir / base
-
-    if not path.exists():
-        return path
-
-    stem = path.stem
-    suffix = path.suffix
-    idx = 2
-    while True:
-        candidate = path.with_name(f"{stem} ({idx}){suffix}")
-        if not candidate.exists():
-            return candidate
-        idx += 1
+    base = vault / rel_dir / _candidate_filename(metadata)
+    return _next_available_note_path(base), None
 
 
 def _is_within_vault(note_path: Path, vault_path: str) -> bool:
@@ -388,7 +427,7 @@ def _upsert_note_core(payload: MetadataDict, vault_path: str, notes_dir: str, ta
     if error or metadata is None or extras is None:
         return make_result(STAGE, ok=False, error=error or "invalid metadata payload", note_path=None)
 
-    note_path = _build_note_path(
+    note_path, matched_existing_path = _build_note_path(
         isbn13=isbn13,
         goodreads_book_id=goodreads_book_id,
         metadata=metadata,
@@ -396,6 +435,41 @@ def _upsert_note_core(payload: MetadataDict, vault_path: str, notes_dir: str, ta
         vault_path=vault_path,
         notes_dir=notes_dir,
     )
+
+    moved = False
+    previous_note_path: Optional[str] = None
+
+    if matched_existing_path is not None and not target_note and not _same_path(note_path, matched_existing_path):
+        if not _is_within_vault(matched_existing_path, vault_path=vault_path):
+            return make_result(
+                STAGE,
+                ok=False,
+                error=f"existing note path escapes vault root: {matched_existing_path}",
+                note_path=str(matched_existing_path),
+            )
+        if not _is_within_vault(note_path, vault_path=vault_path):
+            return make_result(
+                STAGE,
+                ok=False,
+                error=f"target note path escapes vault root: {note_path}",
+                note_path=str(note_path),
+            )
+
+        matched_existing_path = matched_existing_path.expanduser().resolve()
+        note_path = note_path.expanduser().resolve()
+        note_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if note_path.exists():
+            return make_result(
+                STAGE,
+                ok=False,
+                error=f"target note path already exists: {note_path}",
+                note_path=str(note_path),
+            )
+
+        matched_existing_path.rename(note_path)
+        moved = True
+        previous_note_path = str(matched_existing_path)
 
     if not _is_within_vault(note_path, vault_path=vault_path):
         return make_result(
@@ -440,6 +514,8 @@ def _upsert_note_core(payload: MetadataDict, vault_path: str, notes_dir: str, ta
         status=extras.get("status"),
         shelf=extras.get("shelf"),
         needs_review=extras.get("needs_review"),
+        moved=moved,
+        previous_note_path=previous_note_path,
     )
 
 

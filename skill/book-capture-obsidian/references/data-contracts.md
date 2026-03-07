@@ -57,13 +57,7 @@ Additional fields vary per stage.
 ```json
 {
   "isbn13": "978...",
-  "status": "to-read|reading|finished|paused|dropped|dnf|reference|inbox",
-  "rating": 4.0,
-  "needs_review": false,
-  "source_confidence": 0.95,
-  "started": null,
-  "finished": "YYYY-MM-DD",
-  "tags": ["book", "science"],
+  "tags": ["book", "science", "philosophy"],
   "metadata": {
     "title": "...",
     "authors": ["..."],
@@ -80,6 +74,8 @@ Additional fields vary per stage.
 }
 ```
 
+Note: `published_date` is used internally to extract `year` but is not stored in the note frontmatter.
+
 ## 4) Upsert Output Contract
 
 ```json
@@ -93,8 +89,7 @@ Additional fields vary per stage.
   "preserved_user_content": false,
   "isbn13": "978...",
   "title": "...",
-  "status": "to-read",
-  "needs_review": false
+  "shelf": "inbox"
 }
 ```
 

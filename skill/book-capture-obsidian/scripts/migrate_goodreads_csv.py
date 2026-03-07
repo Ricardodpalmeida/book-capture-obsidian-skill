@@ -51,6 +51,19 @@ def _split_tags(value: str) -> List[str]:
     return out
 
 
+def _normalize_tag(value: str) -> str:
+    tag = (value or "").strip().lower()
+    if not tag:
+        return ""
+    tag = tag.replace("&", " and ")
+    for token in ["/", "\\", "(", ")", "[", "]", "{", "}", ",", ":", ";", "!", "?", "'", '"', "`"]:
+        tag = tag.replace(token, " ")
+    tag = "-".join(tag.split())
+    while "--" in tag:
+        tag = tag.replace("--", "-")
+    return tag.strip("-")
+
+
 def _normalize_slug(value: str) -> str:
     text = (value or "").strip().lower()
     if not text:
@@ -62,13 +75,6 @@ def _normalize_slug(value: str) -> str:
         text = text.replace("--", "-")
     text = text.strip("-")
     return text or "unknown"
-
-
-def _make_shelf_tag(exclusive_shelf: str) -> Optional[str]:
-    shelf = _normalize_slug(exclusive_shelf)
-    if not shelf or shelf == "unknown":
-        return None
-    return f"shelf-{shelf}"
 
 
 def _shelf_subfolder(shelf: str) -> str:
@@ -106,6 +112,17 @@ def _get_requests_module():
     except Exception as exc:
         raise RuntimeError(f"requests library is required: {exc}")
     return requests
+
+
+def _best_google_cover(image_links: Dict[str, Any]) -> Optional[str]:
+    for key in ["extraLarge", "large", "medium", "small", "thumbnail", "smallThumbnail"]:
+        value = image_links.get(key)
+        if isinstance(value, str) and value.strip():
+            url = value.replace("http://", "https://")
+            if "google" in url and "zoom=1" in url:
+                url = url.replace("zoom=1", "zoom=2")
+            return url
+    return None
 
 
 def _google_books_enrich(
@@ -204,7 +221,7 @@ def _google_books_enrich(
             "page_count": volume.get("pageCount"),
             "language": volume.get("language") or None,
             "categories": volume.get("categories") if isinstance(volume.get("categories"), list) else [],
-            "cover_image": image_links.get("thumbnail") or image_links.get("smallThumbnail"),
+            "cover_image": _best_google_cover(image_links),
             "source": "google_books",
             "source_url": volume.get("infoLink") or None,
         }
@@ -238,28 +255,32 @@ def _build_payload(
 
     isbn13 = _pick_isbn13(isbn13_raw=isbn13_raw, isbn10_raw=isbn10_raw)
 
-    tags = _split_tags(bookshelves)
-    if "book" not in tags:
-        tags.insert(0, "book")
-    shelf_tag = _make_shelf_tag(shelf)
-    if shelf_tag and shelf_tag not in tags:
-        tags.append(shelf_tag)
+    shelf_value = shelf or "inbox"
+    shelf_norm = _normalize_slug(shelf_value)
+
+    bookshelf_tags = []
+    for raw_tag in _split_tags(bookshelves):
+        tag = _normalize_tag(raw_tag)
+        if tag and tag not in bookshelf_tags:
+            bookshelf_tags.append(tag)
+
+    tags = ["book"]
+    for tag in bookshelf_tags:
+        if _normalize_slug(tag) == shelf_norm:
+            continue
+        if tag not in tags:
+            tags.append(tag)
 
     status = _map_status(shelf, date_read)
 
     payload: Dict[str, Any] = {
         "isbn13": isbn13,
-        "goodreads_book_id": book_id or None,
-        "shelf": shelf or status,
-        "status": status,
-        "needs_review": False,
-        "started": None,
-        "finished": date_read or None,
+        "shelf": shelf_value,
         "tags": tags,
         "metadata": {
             "title": title,
             "authors": [author] if author else [],
-            "categories": tags,
+            "categories": bookshelf_tags,
             "description": None,
             "publisher": publisher or None,
             "published_date": year_published or None,
@@ -268,11 +289,6 @@ def _build_payload(
             "cover_image": None,
             "source": "goodreads_csv",
             "source_url": None,
-        },
-        "goodreads": {
-            "book_id": book_id or None,
-            "date_added": date_added or None,
-            "exclusive_shelf": shelf or None,
         },
     }
 

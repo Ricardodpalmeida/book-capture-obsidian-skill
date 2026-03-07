@@ -34,7 +34,8 @@ Execute this workflow to add or migrate books into an Obsidian vault.
 - Prefer barcode extraction first; use OCR as fallback.
 - Keep filenames human-readable (`Title - Author - Publisher - Year`).
 - Keep `shelf` as property and include tag `book` in all notes.
-- Keep notes connected with series backlinks when volume metadata exists.
+- Use shared compact series tags (for example `theexpanse`, `harrypotter`) when volume metadata exists; avoid separate series hub notes.
 - Preserve user notes section during updates.
 - Keep outputs deterministic and idempotent for repeated runs.
 - Do not store secrets or personal identifiers in generated artifacts.
+- Simplified frontmatter: keep only `title`, `author`, `publisher`, `year`, `isbn_10`, `isbn_13`, `cover`, `shelf`, `source`, `source_url`, `tags`. Remove `published_date`, `genre`, `status`, `date_started`, `date_read`, `needs_review`, `goodreads_book_id`.

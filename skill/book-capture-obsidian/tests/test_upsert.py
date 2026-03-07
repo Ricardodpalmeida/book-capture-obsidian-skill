@@ -22,6 +22,8 @@ BOOK_PAYLOAD = {
     "title": "The Testing Book",
     "authors": ["QA Worker C"],
     "source": "unit-test",
+    "shelf": "inbox",
+    "tags": ["book"],
 }
 
 
