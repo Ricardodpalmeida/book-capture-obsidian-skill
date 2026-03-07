@@ -32,7 +32,7 @@ Execute this workflow to add or migrate books into an Obsidian vault.
 
 - Require explicit vault destination (`BOOK_CAPTURE_VAULT_PATH` or `--vault-path`) before bulk writes.
 - Prefer barcode extraction first; use OCR as fallback.
-- Keep filenames human-readable (`Title - Author - Publisher - Year`).
+- Keep filenames human-readable (`Title - Author (Publisher, Year)`).
 - Keep `shelf` as property and include tag `book` in all notes.
 - Use shared compact series tags (for example `theexpanse`, `harrypotter`) when volume metadata exists; avoid separate series hub notes.
 - Preserve user notes section during updates.

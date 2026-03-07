@@ -17,7 +17,7 @@ export BOOK_CAPTURE_DASHBOARD_FILE="6. Library/Library Dashboard.md"
 Optional explicit note target for one-off writes:
 
 ```bash
-export BOOK_CAPTURE_TARGET_NOTE="/path/to/obsidian-vault/6. Library/Book Title - Author - Publisher - 2025.md"
+export BOOK_CAPTURE_TARGET_NOTE="/path/to/obsidian-vault/6. Library/Book Title - Author (Publisher, 2025).md"
 ```
 
 ## Goodreads Migration Controls

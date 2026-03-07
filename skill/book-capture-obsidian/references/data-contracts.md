@@ -89,7 +89,9 @@ Note: `published_date` is used internally to extract `year` but is not stored in
   "preserved_user_content": false,
   "isbn13": "978...",
   "title": "...",
-  "shelf": "inbox"
+  "shelf": "inbox",
+  "tags": ["book", "science-fiction"],
+  "related_links": ["[[6. Library/...]]", "[[5. Learnings/...]]"]
 }
 ```
 
