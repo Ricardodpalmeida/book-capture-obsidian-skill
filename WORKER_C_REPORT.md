@@ -84,14 +84,14 @@ Reason: `pytest: command not found`
 python3 -m pytest -q skill/book-capture-obsidian/tests
 ```
 Result: **FAIL**
-Reason: `/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14: No module named pytest`
+Reason: `python3: No module named pytest`
 
 ### Command 4
 ```sh
 sh scripts/run_ci_local.sh
 ```
 Result: **FAIL**
-Reason: `/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14: No module named pytest`
+Reason: `python3: No module named pytest`
 
 ### Command 5
 ```sh
