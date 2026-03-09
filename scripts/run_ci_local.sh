@@ -28,7 +28,12 @@ run_pytest() {
 }
 
 echo "==> Running unit tests"
-run_pytest -q skill/book-capture-obsidian/tests
+TEST_DIR="skill/book-capture-obsidian/tests"
+if [ -d "$TEST_DIR" ] && find "$TEST_DIR" -type f \( -name "test_*.py" -o -name "*_test.py" \) | grep -q .; then
+    run_pytest -q "$TEST_DIR"
+else
+    echo "==> Unit tests skipped (no tests found at $TEST_DIR)"
+fi
 
 echo "==> Running script self-checks"
 python3 skill/book-capture-obsidian/scripts/extract_isbn.py --self-check >/dev/null

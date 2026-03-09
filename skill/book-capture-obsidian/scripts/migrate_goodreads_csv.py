@@ -452,7 +452,15 @@ def _self_check() -> Dict[str, Any]:
         google_api_key="",
     )
 
-    ok = sample_payload is not None and err is None and sample_payload.get("status") == "finished"
+    has_status_key = bool(sample_payload and "status" in sample_payload)
+    ok = (
+        sample_payload is not None
+        and err is None
+        and sample_payload.get("isbn13") == "9780306406157"
+        and sample_payload.get("shelf") == "read"
+        and "book" in (sample_payload.get("tags") or [])
+        and not has_status_key
+    )
     return make_result(
         STAGE,
         ok=ok,
@@ -460,6 +468,7 @@ def _self_check() -> Dict[str, Any]:
         checks={
             "isbn13": sample_payload.get("isbn13") if sample_payload else None,
             "status": sample_payload.get("status") if sample_payload else None,
+            "has_status_key": has_status_key,
             "shelf": sample_payload.get("shelf") if sample_payload else None,
             "has_book_tag": "book" in (sample_payload.get("tags") or []) if sample_payload else False,
         },
