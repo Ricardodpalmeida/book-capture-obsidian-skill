@@ -12,6 +12,8 @@ All scripts return deterministic JSON envelopes:
 
 Additional fields vary per stage.
 
+Secrets are excluded from every envelope, including provider warnings. Metadata responses are normalized before they enter these contracts.
+
 ## 1) ISBN Extraction Output (`extract_isbn.py`)
 
 ```json
@@ -111,6 +113,8 @@ Note: `published_date` is used internally to extract `year` but is not stored in
   "warnings": []
 }
 ```
+
+The ingest pipeline does not call the note upsert when ISBN extraction or metadata resolution fails. Provider fallback details remain in `warnings`.
 
 ## 6) Migration Output (`migrate_goodreads_csv.py`)
 

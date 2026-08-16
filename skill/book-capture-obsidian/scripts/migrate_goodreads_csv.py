@@ -5,12 +5,9 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
-import time
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import quote_plus
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -19,6 +16,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from common_config import get_env_bool, get_env_int, get_env_str
 from common_isbn import normalize_isbn
 from common_json import fail_and_print, make_result, print_json
+from google_books import search_google_books
 from upsert_obsidian_note import upsert_note
 
 STAGE = "migrate_goodreads_csv"
@@ -81,21 +79,6 @@ def _shelf_subfolder(shelf: str) -> str:
     return _normalize_slug(shelf)
 
 
-def _map_status(exclusive_shelf: str, date_read: str) -> str:
-    shelf = exclusive_shelf.strip().lower()
-    if shelf in {"to-read", "to read", "want-to-read"}:
-        return "to-read"
-    if shelf in {"currently-reading", "currently reading", "reading"}:
-        return "reading"
-    if shelf in {"read", "finished"}:
-        return "finished"
-    if shelf in {"did-not-finish", "dnf"}:
-        return "dnf"
-    if date_read.strip():
-        return "finished"
-    return "inbox"
-
-
 def _pick_isbn13(isbn13_raw: str, isbn10_raw: str) -> Optional[str]:
     normalized_13 = normalize_isbn(isbn13_raw or "")
     if normalized_13:
@@ -103,25 +86,6 @@ def _pick_isbn13(isbn13_raw: str, isbn10_raw: str) -> Optional[str]:
     normalized_10 = normalize_isbn(isbn10_raw or "")
     if normalized_10:
         return normalized_10
-    return None
-
-
-def _get_requests_module():
-    try:
-        import requests  # type: ignore
-    except Exception as exc:
-        raise RuntimeError(f"requests library is required: {exc}")
-    return requests
-
-
-def _best_google_cover(image_links: Dict[str, Any]) -> Optional[str]:
-    for key in ["extraLarge", "large", "medium", "small", "thumbnail", "smallThumbnail"]:
-        value = image_links.get(key)
-        if isinstance(value, str) and value.strip():
-            url = value.replace("http://", "https://")
-            if "google" in url and "zoom=1" in url:
-                url = url.replace("zoom=1", "zoom=2")
-            return url
     return None
 
 
@@ -133,9 +97,8 @@ def _google_books_enrich(
     delay_ms: int,
     max_retries: int,
     api_key: str,
+    max_retry_after_sec: int = 10,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
-    requests = _get_requests_module()
-
     if isbn13:
         query = f"isbn:{isbn13}"
     else:
@@ -148,85 +111,16 @@ def _google_books_enrich(
 
     if not query:
         return None, None, "missing query for google books enrichment"
-
-    url = f"https://www.googleapis.com/books/v1/volumes?q={quote_plus(query)}&maxResults=1"
-    if api_key.strip():
-        url = f"{url}&key={quote_plus(api_key.strip())}"
-
-    attempt = 0
-    while True:
-        try:
-            res = requests.get(
-                url,
-                timeout=timeout_sec,
-                headers={"Accept": "application/json", "User-Agent": "book-capture-obsidian/1.0"},
-            )
-        except Exception as exc:
-            if attempt >= max_retries:
-                return None, None, f"google books request failed: {exc}"
-            time.sleep((delay_ms / 1000.0) * max(1, 2**attempt))
-            attempt += 1
-            continue
-
-        if res.status_code == 429:
-            if attempt >= max_retries:
-                return None, None, "google books rate limit (429)"
-            retry_after = res.headers.get("Retry-After")
-            if retry_after and retry_after.isdigit():
-                time.sleep(max(1, int(retry_after)))
-            else:
-                time.sleep((delay_ms / 1000.0) * max(1, 2**attempt))
-            attempt += 1
-            continue
-
-        if res.status_code >= 500:
-            if attempt >= max_retries:
-                return None, None, f"google books http {res.status_code}"
-            time.sleep((delay_ms / 1000.0) * max(1, 2**attempt))
-            attempt += 1
-            continue
-
-        try:
-            res.raise_for_status()
-            payload = res.json()
-        except Exception as exc:
-            return None, None, f"google books response failed: {exc}"
-
-        items = payload.get("items") if isinstance(payload, dict) else None
-        if not isinstance(items, list) or not items:
-            return None, None, "google books returned no items"
-
-        item0 = items[0] if isinstance(items[0], dict) else {}
-        volume = item0.get("volumeInfo") if isinstance(item0.get("volumeInfo"), dict) else {}
-
-        found_isbn13 = None
-        identifiers = volume.get("industryIdentifiers") if isinstance(volume.get("industryIdentifiers"), list) else []
-        for identifier in identifiers:
-            if not isinstance(identifier, dict):
-                continue
-            val = normalize_isbn(str(identifier.get("identifier") or ""))
-            if val:
-                found_isbn13 = val
-                if len(val) == 13:
-                    break
-
-        image_links = volume.get("imageLinks") if isinstance(volume.get("imageLinks"), dict) else {}
-
-        metadata = {
-            "title": volume.get("title") or None,
-            "authors": volume.get("authors") if isinstance(volume.get("authors"), list) else [],
-            "publisher": volume.get("publisher") or None,
-            "published_date": volume.get("publishedDate") or None,
-            "description": volume.get("description") or None,
-            "page_count": volume.get("pageCount"),
-            "language": volume.get("language") or None,
-            "categories": volume.get("categories") if isinstance(volume.get("categories"), list) else [],
-            "cover_image": _best_google_cover(image_links),
-            "source": "google_books",
-            "source_url": volume.get("infoLink") or None,
-        }
-
-        return metadata, found_isbn13, None
+    return search_google_books(
+        query,
+        requested_isbn=isbn13,
+        timeout_sec=timeout_sec,
+        user_agent="book-capture-obsidian/1.0",
+        api_key=api_key,
+        delay_ms=delay_ms,
+        max_retries=max_retries,
+        max_retry_after_sec=max_retry_after_sec,
+    )
 
 
 def _build_payload(
@@ -235,6 +129,7 @@ def _build_payload(
     timeout_sec: int,
     google_delay_ms: int,
     google_max_retries: int,
+    google_max_retry_after_sec: int,
     enrich_google: bool,
     google_api_key: str,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
@@ -244,9 +139,6 @@ def _build_payload(
     isbn13_raw = _get_value(row, header_map, "ISBN13")
     shelf = _get_value(row, header_map, "Exclusive Shelf")
     bookshelves = _get_value(row, header_map, "Bookshelves")
-    date_read = _get_value(row, header_map, "Date Read")
-    date_added = _get_value(row, header_map, "Date Added")
-    book_id = _get_value(row, header_map, "Book Id")
     publisher = _get_value(row, header_map, "Publisher")
     year_published = _get_value(row, header_map, "Year Published")
 
@@ -270,8 +162,6 @@ def _build_payload(
             continue
         if tag not in tags:
             tags.append(tag)
-
-    status = _map_status(shelf, date_read)
 
     payload: Dict[str, Any] = {
         "isbn13": isbn13,
@@ -301,6 +191,7 @@ def _build_payload(
             delay_ms=google_delay_ms,
             max_retries=google_max_retries,
             api_key=google_api_key,
+            max_retry_after_sec=google_max_retry_after_sec,
         )
         if meta_enriched:
             for k, v in meta_enriched.items():
@@ -328,6 +219,9 @@ def migrate_csv(
     timeout_sec = get_env_int("BOOK_CAPTURE_HTTP_TIMEOUT_SECONDS", 12, minimum=2)
     google_delay_ms = get_env_int("BOOK_CAPTURE_GOOGLE_DELAY_MS", 400, minimum=50)
     google_max_retries = get_env_int("BOOK_CAPTURE_GOOGLE_MAX_RETRIES", 5, minimum=0)
+    google_max_retry_after_sec = get_env_int(
+        "BOOK_CAPTURE_GOOGLE_MAX_RETRY_AFTER_SECONDS", 10, minimum=0
+    )
     google_api_key = get_env_str("BOOK_CAPTURE_GOOGLE_API_KEY", "")
 
     created = 0
@@ -354,6 +248,7 @@ def migrate_csv(
                 timeout_sec=timeout_sec,
                 google_delay_ms=google_delay_ms,
                 google_max_retries=google_max_retries,
+                google_max_retry_after_sec=google_max_retry_after_sec,
                 enrich_google=enrich_google,
                 google_api_key=google_api_key,
             )
@@ -448,6 +343,7 @@ def _self_check() -> Dict[str, Any]:
         timeout_sec=2,
         google_delay_ms=100,
         google_max_retries=0,
+        google_max_retry_after_sec=0,
         enrich_google=False,
         google_api_key="",
     )

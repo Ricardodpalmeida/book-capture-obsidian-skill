@@ -4,11 +4,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import quote_plus
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -17,6 +15,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from common_config import get_env_csv, get_env_int, get_env_str
 from common_isbn import normalize_isbn
 from common_json import fail_and_print, make_result, print_json, read_json_file
+from google_books import search_google_books
 
 STAGE = "resolve_metadata"
 
@@ -66,19 +65,6 @@ def _clean_str_list(values: Any) -> List[str]:
     return out
 
 
-def _best_google_cover(image_links: Any) -> Optional[str]:
-    if not isinstance(image_links, dict):
-        return None
-    for key in ["extraLarge", "large", "medium", "small", "thumbnail", "smallThumbnail"]:
-        value = image_links.get(key)
-        if isinstance(value, str) and value.strip():
-            url = value.replace("http://", "https://")
-            if "google" in url and "zoom=1" in url:
-                url = url.replace("zoom=1", "zoom=2")
-            return url
-    return None
-
-
 def _normalize_metadata(raw: MetadataDict, source: str) -> MetadataDict:
     """Normalize provider-specific data to a stable metadata contract."""
     authors = _clean_str_list(raw.get("authors"))
@@ -112,36 +98,19 @@ def _normalize_metadata(raw: MetadataDict, source: str) -> MetadataDict:
 
 
 def _from_google_books(isbn13: str, timeout_sec: int, user_agent: str) -> Tuple[Optional[MetadataDict], Optional[str]]:
-    query = quote_plus(f"isbn:{isbn13}")
-    url = f"https://www.googleapis.com/books/v1/volumes?q={query}&maxResults=1"
-    try:
-        payload = _http_get_json(url, timeout_sec=timeout_sec, user_agent=user_agent)
-    except Exception as exc:
-        return None, f"google_books request failed: {exc}"
-
-    items = payload.get("items")
-    if not isinstance(items, list) or not items:
-        return None, "google_books returned no items"
-
-    item0 = items[0] if isinstance(items[0], dict) else {}
-    volume = item0.get("volumeInfo") if isinstance(item0.get("volumeInfo"), dict) else {}
-
-    raw = {
-        "title": volume.get("title"),
-        "authors": volume.get("authors") or [],
-        "publisher": volume.get("publisher"),
-        "published_date": volume.get("publishedDate"),
-        "description": volume.get("description"),
-        "page_count": volume.get("pageCount"),
-        "language": volume.get("language"),
-        "categories": volume.get("categories") or [],
-        "cover_image": _best_google_cover(volume.get("imageLinks")),
-        "source_url": volume.get("infoLink"),
-    }
-    metadata = _normalize_metadata(raw, source="google_books")
-    if not metadata.get("title"):
-        return None, "google_books missing title"
-    return metadata, None
+    metadata, _found_isbn, warning = search_google_books(
+        f"isbn:{isbn13}",
+        requested_isbn=isbn13,
+        timeout_sec=timeout_sec,
+        user_agent=user_agent,
+        api_key=get_env_str("BOOK_CAPTURE_GOOGLE_API_KEY", ""),
+        delay_ms=get_env_int("BOOK_CAPTURE_GOOGLE_DELAY_MS", 400, minimum=0),
+        max_retries=get_env_int("BOOK_CAPTURE_GOOGLE_MAX_RETRIES", 5, minimum=0),
+        max_retry_after_sec=get_env_int(
+            "BOOK_CAPTURE_GOOGLE_MAX_RETRY_AFTER_SECONDS", 10, minimum=0
+        ),
+    )
+    return metadata, warning
 
 
 def _from_openlibrary(isbn13: str, timeout_sec: int, user_agent: str) -> Tuple[Optional[MetadataDict], Optional[str]]:

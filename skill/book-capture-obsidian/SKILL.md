@@ -1,6 +1,6 @@
 ---
 name: book-capture-obsidian
-description: Capture and normalize book metadata into Obsidian Markdown notes from photos or Goodreads CSV exports. Use for barcode and OCR ISBN extraction, metadata enrichment, idempotent note upsert, bulk migration, and dashboard generation.
+description: "Capture books in Obsidian from photos or Goodreads CSV, with ISBN extraction, metadata enrichment, safe upsert, and dashboards."
 ---
 
 # Book Capture Obsidian
@@ -32,6 +32,7 @@ Execute this workflow to add or migrate books into an Obsidian vault.
 
 - Require explicit vault destination (`BOOK_CAPTURE_VAULT_PATH` or `--vault-path`) before bulk writes.
 - Prefer barcode extraction first; use OCR as fallback.
+- Use the Google Books API key when configured; preserve Open Library fallback.
 - Keep filenames human-readable (`Title - Author (Publisher, Year)`).
 - Keep `shelf` as property and include tag `book` in all notes.
 - Use shared compact series tags (for example `theexpanse`, `harrypotter`) when volume metadata exists; avoid separate series hub notes.

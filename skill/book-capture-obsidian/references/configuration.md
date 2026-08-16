@@ -32,6 +32,7 @@ export BOOK_CAPTURE_GOOGLE_API_KEY="YOUR_GOOGLE_BOOKS_API_KEY"
 # Delay and retry controls for Google API rate limits
 export BOOK_CAPTURE_GOOGLE_DELAY_MS=400
 export BOOK_CAPTURE_GOOGLE_MAX_RETRIES=5
+export BOOK_CAPTURE_GOOGLE_MAX_RETRY_AFTER_SECONDS=10
 
 # Optional folder structure by shelf property
 export BOOK_CAPTURE_GROUP_BY_SHELF=true
@@ -47,8 +48,9 @@ export BOOK_CAPTURE_ZBARIMG_TIMEOUT_SECONDS=8
 export BOOK_CAPTURE_ENABLE_PYZBAR=true
 export BOOK_CAPTURE_ENABLE_OCR=true
 export BOOK_CAPTURE_OCR_LANG=eng
+export BOOK_CAPTURE_TESSERACT_TIMEOUT_SECONDS=20
 # Optional explicit tesseract binary path:
-# export BOOK_CAPTURE_TESSERACT_CMD=/usr/bin/tesseract
+# export BOOK_CAPTURE_TESSERACT_CMD=/path/to/tesseract
 ```
 
 ## Metadata Resolver Controls
@@ -69,14 +71,18 @@ export BOOK_CAPTURE_DASHBOARD_TEMPLATE="skill/book-capture-obsidian/assets/templ
 
 - Barcode primary: `zbarimg`
 - Barcode secondary: `pyzbar`
-- OCR fallback: `pytesseract`
-- Goodreads bulk enrichment: `google_books` (with delay/retry controls)
+- OCR fallback: `pytesseract`, then direct `tesseract` CLI when the wrapper is unavailable
+- Photo and Goodreads enrichment: one keyed Google Books client with bounded retries
 
 Behavior:
 - Missing `zbarimg` -> continue with `pyzbar` and/or OCR.
 - Missing `pyzbar` -> continue with `zbarimg` and/or OCR.
-- Missing OCR stack -> barcode-only mode.
+- Missing `pytesseract` -> use the installed `tesseract` binary directly.
+- Missing both OCR paths -> barcode-only mode.
+- Google network, rate-limit, or transient server failure -> retry within configured bounds, then continue to the next metadata provider.
 - No barcode and no OCR -> deterministic extraction failure JSON.
+
+The Google key is sent as an HTTP parameter and is never included in result JSON or warnings. Google Books requests use a partial-response field set to reduce response volume.
 
 ## Privacy Defaults
 

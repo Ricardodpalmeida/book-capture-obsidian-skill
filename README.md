@@ -62,9 +62,12 @@ pip install -r requirements-dev.txt
 Order of extraction:
 1. `zbarimg` CLI (primary barcode)
 2. `pyzbar` (secondary barcode)
-3. `pytesseract` OCR fallback
+3. `pytesseract` OCR
+4. Direct `tesseract` CLI when `pytesseract` is unavailable
 
 If one component is missing, the pipeline degrades gracefully and continues with available stages.
+
+Photo resolution and Goodreads enrichment share one Google Books client. Configure `BOOK_CAPTURE_GOOGLE_API_KEY` for keyed public-data quota; bounded retries cover network failures, HTTP 429, and transient 5xx responses before provider fallback.
 
 ## Configuration
 

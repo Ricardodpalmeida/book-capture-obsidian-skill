@@ -9,12 +9,14 @@ Checks:
 - Ensure barcode is visible and in focus.
 - Confirm at least one extraction path is installed:
   - `zbarimg` or `pyzbar`
-  - OCR fallback (`pytesseract` + `tesseract` binary)
-- Run self-check:
+  - OCR fallback (`pytesseract` or the `tesseract` binary)
+- Inspect runtime dependency detection:
 
 ```bash
-python skill/book-capture-obsidian/scripts/extract_isbn.py --self-check
+python skill/book-capture-obsidian/scripts/extract_isbn.py --diagnose-deps
 ```
+
+If direct OCR times out, increase `BOOK_CAPTURE_TESSERACT_TIMEOUT_SECONDS`.
 
 ## 2) Metadata not found
 
@@ -24,6 +26,7 @@ Symptoms:
 Checks:
 - Verify ISBN is valid.
 - Confirm internet access for API requests.
+- Set `BOOK_CAPTURE_GOOGLE_API_KEY` for the keyed public-data quota.
 - Increase timeout if needed:
 
 ```bash
@@ -35,6 +38,8 @@ export BOOK_CAPTURE_HTTP_TIMEOUT_SECONDS=20
 ```bash
 export BOOK_CAPTURE_METADATA_PROVIDER_ORDER="openlibrary,google_books"
 ```
+
+Google retries only network errors, HTTP 429, and transient 5xx responses. HTTP 400/403 errors fall through immediately. A failed Google attempt should appear in `warnings` while Open Library can still satisfy the request.
 
 ## 3) Notes not updating as expected
 
