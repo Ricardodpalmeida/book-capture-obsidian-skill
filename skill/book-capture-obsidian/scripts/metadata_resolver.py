@@ -10,6 +10,7 @@ runs skip it instead of retrying into the same 429.
 
 from __future__ import annotations
 
+import difflib
 import time
 import unicodedata
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -89,6 +90,34 @@ def _query_key(title: str, author: str) -> str:
         return " ".join(text.lower().split())
 
     return f"{norm(title)}|{norm(author)}"
+
+
+def _fold(text: str) -> str:
+    text = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode("ascii").lower()
+    return " ".join("".join(c if c.isalnum() else " " for c in text).split())
+
+
+def _main_title(title: str) -> str:
+    """Title without subtitle or series note: 'Dune: Deluxe (Book 1)' -> 'dune'."""
+    for sep in (":", " (", " - ", ";"):
+        if sep in title:
+            title = title.split(sep, 1)[0]
+    return _fold(title)
+
+
+def title_matches(query: str, candidate: str) -> bool:
+    q, c = _main_title(query), _main_title(candidate)
+    if not q or not c:
+        return False
+    return q == c or difflib.SequenceMatcher(None, q, c).ratio() >= 0.85
+
+
+def author_matches(query: str, candidates: List[str]) -> bool:
+    """True when any significant name token of ``query`` appears in a candidate author."""
+    wanted = {t for t in _fold(query).split() if len(t) >= 3}
+    if not wanted:
+        return True
+    return any(wanted & set(_fold(name).split()) for name in candidates)
 
 
 def is_complete(metadata: Optional[MetadataDict]) -> bool:
@@ -292,6 +321,14 @@ class MetadataResolver:
             self.cache.set_cooldown(GOOGLE, self.google_cooldown_sec, warning)
             minutes = max(1, self.google_cooldown_sec // 60)
             return None, None, f"{warning}; Google Books paused for {minutes} min", False
+        if metadata and not isbn:
+            # Title searches get the same guard as Open Library, and the
+            # edition ISBN is not adopted (it may belong to any edition).
+            if not title_matches(title, metadata.get("title") or "") or (
+                author and not author_matches(author, metadata.get("authors") or [])
+            ):
+                return None, None, "google books found no close title/author match", True
+            return metadata, None, None, True
         if metadata:
             return metadata, found_isbn, None, True
         # "no items" and ISBN mismatches are stable answers worth caching;
@@ -371,13 +408,22 @@ class MetadataResolver:
             description = description.get("value")
         subjects = names(book.get("subjects"))
 
-        work_key = None
-        for item in book.get("works") or []:
-            if isinstance(item, dict) and isinstance(item.get("key"), str):
-                work_key = item["key"]
-                break
-        if work_key and (not _clean_text(description) or not subjects):
-            work = self._openlibrary_work(work_key)
+        if not _clean_text(description) or not subjects:
+            # jscmd=data omits the work link, so read it from the edition record.
+            works = book.get("works")
+            if not works and isinstance(book.get("key"), str) and book["key"].startswith("/books/"):
+                edition = self._openlibrary_work(book["key"])
+                works = edition.get("works")
+                if not _clean_text(description):
+                    description = edition.get("description")
+                    if isinstance(description, dict):
+                        description = description.get("value")
+            work_key = None
+            for item in works or []:
+                if isinstance(item, dict) and isinstance(item.get("key"), str):
+                    work_key = item["key"]
+                    break
+            work = self._openlibrary_work(work_key) if work_key and (not _clean_text(description) or not subjects) else {}
             if not _clean_text(description):
                 work_desc = work.get("description")
                 description = work_desc.get("value") if isinstance(work_desc, dict) else work_desc
@@ -388,7 +434,7 @@ class MetadataResolver:
         publishers = names(book.get("publishers"))
         metadata = {
             "authors": names(book.get("authors")),
-            "categories": subjects,
+            "categories": subjects[:10],
             "cover_image": _clean_text(cover.get("large") or cover.get("medium") or cover.get("small")),
             "description": _clean_text(description),
             "language": None,
@@ -411,14 +457,27 @@ class MetadataResolver:
         # The search doc lists ISBNs of every edition, so none is adopted here:
         # a wrong edition ISBN would break deduplication.
         fields = "key,title,author_name,publisher,first_publish_year,cover_i,subject,number_of_pages_median"
-        url = f"https://openlibrary.org/search.json?title={quote(title)}&limit=1&fields={fields}"
+        url = f"https://openlibrary.org/search.json?title={quote(title)}&limit=5&fields={fields}"
         if author:
             url += f"&author={quote(author)}"
         payload = self._ol_checked(url)
         docs = (payload or {}).get("docs")
-        if not isinstance(docs, list) or not docs or not isinstance(docs[0], dict):
+        if not isinstance(docs, list) or not docs:
             return None, None, "openlibrary search returned no match", True
-        doc = docs[0]
+        # Search ranking is loose (a title query can return a sequel or an
+        # unrelated book with the same title), so only accept a doc whose
+        # title and author both match what was asked for.
+        doc = next(
+            (
+                d for d in docs
+                if isinstance(d, dict)
+                and title_matches(title, str(d.get("title") or ""))
+                and (not author or author_matches(author, _clean_str_list(d.get("author_name"))))
+            ),
+            None,
+        )
+        if doc is None:
+            return None, None, "openlibrary search found no close title/author match", True
 
         work = self._openlibrary_work(doc.get("key"))
         work_desc = work.get("description")

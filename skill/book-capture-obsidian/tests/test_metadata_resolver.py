@@ -203,7 +203,7 @@ def test_openlibrary_requests_are_spaced():
 
 def test_base_fields_win_and_title_search_does_not_adopt_edition_isbn():
     clock, log = Clock(), []
-    search = {"docs": [{"key": "/works/OL1W", "title": "Other Title", "author_name": ["X"], "cover_i": 7}]}
+    search = {"docs": [{"key": "/works/OL1W", "title": "CSV Title: A Novel", "author_name": ["Csv Author"], "cover_i": 7}]}
     fake_get = router(
         {
             "https://openlibrary.org/search.json": lambda: FakeResponse(200, search),
@@ -227,3 +227,81 @@ def test_merge_missing_ignores_empty_values():
         "title": "A",
         "categories": ["x"],
     }
+
+
+def test_title_search_rejects_wrong_book_and_picks_matching_doc():
+    # Shapes taken from real Open Library responses (2026-10): a title plus
+    # author query for "The Three-Body Problem" ranks the sequels first, and a
+    # title-only query returns a physics book with the same title.
+    clock, log = Clock(), []
+    docs = {
+        "docs": [
+            {"key": "/works/OL16314245W", "title": "The Dark Forest (The Three-Body Problem Series Book 2)", "author_name": ["Liu Cixin"]},
+            {"key": "/works/OL15172337W", "title": "The Three-Body Problem", "author_name": ["Mauri Valtonen", "Hannu Karttunen"]},
+            {"key": "/works/OL9W", "title": "The Three-Body Problem", "author_name": ["Cixin Liu"], "cover_i": 3},
+        ]
+    }
+    fake_get = router(
+        {
+            "https://openlibrary.org/search.json": lambda: FakeResponse(200, docs),
+            "https://openlibrary.org/works/OL9W.json": lambda: FakeResponse(200, {"description": "Right book"}),
+        },
+        log,
+    )
+    resolver = make_resolver(fake_get, clock, providers=["openlibrary"])
+    metadata, _isbn, _w = resolver.lookup(title="The Three-Body Problem", author="Liu Cixin")
+    assert metadata["description"] == "Right book"
+    assert "limit=5" in log[0]
+
+    only_wrong = {"docs": docs["docs"][:2]}
+    fake_get = router({"https://openlibrary.org/search.json": lambda: FakeResponse(200, only_wrong)}, [])
+    resolver = make_resolver(fake_get, Clock(), providers=["openlibrary"])
+    metadata, _isbn, warnings = resolver.lookup(title="The Three-Body Problem", author="Liu Cixin")
+    assert not (metadata or {}).get("description")
+    assert any("no close title/author match" in w for w in warnings)
+
+
+def test_isbn_lookup_follows_edition_record_to_work_description():
+    # Real jscmd=data responses carry the edition key but no works link.
+    clock, log = Clock(), []
+    book = openlibrary_book(description=None)
+    book[f"ISBN:{ISBN}"]["key"] = "/books/OL1M"
+    book[f"ISBN:{ISBN}"]["subjects"] = [{"name": f"S{i}"} for i in range(30)]
+    fake_get = router(
+        {
+            "https://openlibrary.org/api/books": lambda: FakeResponse(200, book),
+            "https://openlibrary.org/books/OL1M.json": lambda: FakeResponse(200, {"works": [{"key": "/works/OL7W"}]}),
+            "https://openlibrary.org/works/OL7W.json": lambda: FakeResponse(200, {"description": {"value": "Work blurb"}}),
+        },
+        log,
+    )
+    resolver = make_resolver(fake_get, clock, providers=["openlibrary"])
+    metadata, _isbn, _w = resolver.lookup(isbn13=ISBN)
+    assert metadata["description"] == "Work blurb"
+    assert len(metadata["categories"]) == 10
+    assert [u.split("?")[0] for u in log] == [
+        "https://openlibrary.org/api/books",
+        "https://openlibrary.org/books/OL1M.json",
+        "https://openlibrary.org/works/OL7W.json",
+    ]
+
+
+def test_google_title_search_needs_matching_title_and_drops_isbn():
+    clock = Clock()
+    wrong = google_payload()
+    fake_get = router(
+        {
+            "https://openlibrary.org/search.json": lambda: FakeResponse(200, {"docs": []}),
+            "https://www.googleapis.com/books/v1/volumes": lambda: FakeResponse(200, wrong),
+        },
+        [],
+    )
+    resolver = make_resolver(fake_get, clock, google_delay_ms=0)
+    metadata, isbn, warnings = resolver.lookup(title="Completely Different", author="Someone")
+    assert not (metadata or {}).get("description") and isbn is None
+    assert any("google books found no close" in w for w in warnings)
+
+    resolver = make_resolver(fake_get, Clock(), google_delay_ms=0)
+    metadata, isbn, _w = resolver.lookup(title="Test Book", author="Test Author")
+    assert metadata["description"] == "A Google description"
+    assert isbn is None

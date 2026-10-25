@@ -13,6 +13,7 @@
 
 - `warnings` lists each provider's answer. `openlibrary returned no entry` and `google books returned no items` are real misses; try a title lookup.
 - `google_books skipped: cooling down after a rate limit` or `per-run request budget reached` means the quota guard stopped Google. The note was written with Open Library data. Re-run later, or set `BOOK_CAPTURE_GOOGLE_API_KEY`.
+- `found no close title/author match` means a title search returned only other books (sequels, translations listed under another script, same title by a different author). Nothing was guessed. Ask the user for the ISBN, which is always more reliable than a title.
 - A wrong cached answer can be cleared by deleting `metadata.sqlite3` in the cache folder (see `configuration.md`).
 - HTTP 400 or 403 from Google usually means an invalid or restricted API key.
 
