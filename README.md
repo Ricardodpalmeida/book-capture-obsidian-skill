@@ -182,6 +182,10 @@ This creates `dist/book-capture-obsidian-<timestamp>.skill.tgz` plus checksum.
 
 Use `RELEASE_READINESS.md` checklist before publishing.
 
+## License
+
+[MIT-0](LICENSE) (MIT No Attribution): use, copy, modify and redistribute it for any purpose, with no attribution required. The same license applies on ClawHub.
+
 ## More from the author
 
 Made by Ricardo Pacheco de Almeida. I write about applied AI, agents and enterprise architecture at [ricbits](https://me.ricbits.cc).
