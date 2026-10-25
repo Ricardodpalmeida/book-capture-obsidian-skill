@@ -1,0 +1,2 @@
+# Runtime dependencies live with the skill so the published package and CI agree
+-r skill/book-capture-obsidian/requirements.txt

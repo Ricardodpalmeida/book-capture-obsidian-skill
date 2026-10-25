@@ -1,0 +1,1 @@
+-r skill/book-capture-obsidian/requirements-dev.txt

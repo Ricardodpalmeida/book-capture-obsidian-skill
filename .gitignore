@@ -1,0 +1,27 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+.env/
+
+# Coverage and test outputs
+.coverage
+coverage.xml
+htmlcov/
+
+# Logs and local temp artifacts
+*.log
+tmp/
+dist/
+
+# Editor/OS noise
+.DS_Store
+.vscode/
+.idea/
