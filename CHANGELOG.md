@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.4
+
+- Security: shelf names in the dashboard's shelf table are escaped like note text, so a crafted shelf name can no longer run Dataview JS. Pipes are escaped too, so they no longer break the table.
+
 ## 1.3.3
 
 - Security: backslashes in external text are escaped too, so a backslash placed before a backtick can no longer switch the 1.3.2 escaping back off.

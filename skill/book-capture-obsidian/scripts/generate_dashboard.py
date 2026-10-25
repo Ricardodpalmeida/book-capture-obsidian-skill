@@ -15,6 +15,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from common_config import get_env_csv, get_env_str
 from common_json import fail_and_print, make_result, print_json
+from common_markdown import inert_table_cell
 
 STAGE = "generate_dashboard"
 DEFAULT_TEMPLATE = SCRIPT_DIR.parent / "assets" / "templates" / "library-dashboard-template.md"
@@ -35,7 +36,7 @@ def _shelf_table(counts: Dict[str, int]) -> str:
         return "_No shelves yet._"
     rows = ["| Shelf | Books |", "| --- | --- |"]
     for shelf, count in sorted(counts.items(), key=lambda item: (-item[1], item[0])):
-        rows.append(f"| {shelf} | {count} |")
+        rows.append(f"| {inert_table_cell(shelf)} | {count} |")
     return "\n".join(rows)
 
 
