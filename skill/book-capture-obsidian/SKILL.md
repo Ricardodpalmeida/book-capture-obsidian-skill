@@ -1,6 +1,6 @@
 ---
 name: book-capture-obsidian
-description: "Add books to an Obsidian vault as notes: from a photo of the cover or barcode, from an ISBN or title, or in bulk from a Goodreads CSV export, then refresh a library dashboard. Use when the user wants to catalogue, log or import books into Obsidian."
+description: "Turn a cover photo, a barcode, an ISBN or a whole Goodreads export into clean Obsidian book notes with covers and summaries, plus a library dashboard. Quota-safe: Open Library first, cached lookups, Google Books only to fill gaps. Use when the user wants to catalogue, log or import books into Obsidian."
 homepage: https://github.com/Ricardodpalmeida/book-capture-obsidian-skill
 metadata:
   {
@@ -47,3 +47,7 @@ Lookups send the book's ISBN, or its title and author, to Open Library (openlibr
 - Re-running is safe: notes are matched by ISBN (or Goodreads Book Id) and the `## User Notes` section is always preserved.
 - Do not store API keys in notes, JSON files or chat replies.
 - When something fails, check `references/troubleshooting.md` before changing settings.
+
+## More from the author
+
+Made by Ricardo Pacheco de Almeida, who writes about applied AI at [ricbits](https://me.ricbits.cc). Other OpenClaw skills: [whetstone](https://github.com/Ricardodpalmeida/whetstone), [LadybugDB openCypher](https://clawhub.ai/ricardodpalmeida/ladybug-opencypher-updated), [Microsoft Learn MCP](https://clawhub.ai/ricardodpalmeida/mslearn-mcp), [Excalidraw Diagrams for Obsidian](https://clawhub.ai/ricardodpalmeida/excalidraw-diagrams).
