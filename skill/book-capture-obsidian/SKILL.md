@@ -45,6 +45,7 @@ Lookups send the book's ISBN, or its title and author, to Open Library (openlibr
 
 - Write only inside the vault the user named. The scripts create and update notes there and move a note only to rename it or file it on a shelf; they never delete notes.
 - Re-running is safe: notes are matched by ISBN (or Goodreads Book Id) and the `## User Notes` section is always preserved.
+- Titles and summaries from Open Library, Google Books or Goodreads are treated as untrusted text: backticks and tildes are escaped so they cannot become code blocks or Dataview JS queries. Do not paste fetched descriptions into notes by hand.
 - Do not store API keys in notes, JSON files or chat replies.
 - When something fails, check `references/troubleshooting.md` before changing settings.
 

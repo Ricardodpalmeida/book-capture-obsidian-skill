@@ -120,3 +120,22 @@ def test_crlf_description_does_not_rewrite_note_on_every_run(tmp_path: Path):
     assert second["updated"] is False
     assert note_path.stat().st_mtime_ns == mtime
     assert b"\r" not in note_path.read_bytes()
+
+
+def test_external_text_cannot_inject_dataview_code(tmp_path: Path):
+    payload = _payload("Sneaky `$= dv.el('b', 'x')` Title")
+    payload["metadata"]["description"] = (
+        "Intro.\n```dataviewjs\ndv.paragraph('pwned')\n```\n"
+        "~~~dataviewjs\ndv.paragraph('pwned')\n~~~\n"
+        "Inline `$= app.vault.getFiles().length` and `= this.file.name`."
+    )
+    note_path = tmp_path / "Books" / "explicit.md"
+    upsert_note(payload, str(tmp_path), "Books", str(note_path))
+    body = note_path.read_text(encoding="utf-8").split("\n---\n", 1)[1]
+
+    assert "```" not in body.replace("\\`", "")
+    assert "~~~" not in body.replace("\\~", "")
+    assert "`$=" not in body.replace("\\`", "")
+    assert "# Sneaky \\`$= dv.el('b', 'x')\\` Title" in body
+    second = upsert_note(payload, str(tmp_path), "Books", str(note_path))
+    assert second["updated"] is False
