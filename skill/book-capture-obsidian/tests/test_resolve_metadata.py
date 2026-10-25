@@ -5,41 +5,32 @@ import resolve_metadata
 ISBN = "9780306406157"
 
 
-def test_google_failure_falls_back_to_openlibrary(monkeypatch):
-    expected = {
-        "title": "Fallback Book",
-        "authors": ["Fallback Author"],
-        "publisher": None,
-        "published_date": None,
-        "description": None,
-        "page_count": None,
-        "language": None,
-        "categories": [],
-        "cover_image": None,
-        "source": "openlibrary",
-        "source_url": None,
-    }
-    monkeypatch.setenv("BOOK_CAPTURE_METADATA_PROVIDER_ORDER", "google_books,openlibrary")
-    monkeypatch.setattr(
-        resolve_metadata,
-        "_from_google_books",
-        lambda **_kwargs: (None, "google books rate limit (429)"),
-    )
-    monkeypatch.setattr(resolve_metadata, "_from_openlibrary", lambda **_kwargs: (expected, None))
+class FakeResolver:
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
 
-    result = resolve_metadata.resolve_book_metadata(ISBN)
+    def lookup(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.result
+
+
+def test_resolved_metadata_is_wrapped_in_the_stable_envelope():
+    metadata = {"title": "Fallback Book", "authors": ["Fallback Author"], "source": "openlibrary"}
+    resolver = FakeResolver((metadata, ISBN, ["google_books skipped: per-run request budget reached"]))
+
+    result = resolve_metadata.resolve_book_metadata(ISBN, resolver=resolver)
 
     assert result["ok"] is True
-    assert result["metadata"] == expected
-    assert result["warnings"] == ["google books rate limit (429)"]
+    assert result["metadata"] == metadata
+    assert result["warnings"] == ["google_books skipped: per-run request budget reached"]
+    assert resolver.calls == [{"isbn13": ISBN, "title": "", "author": ""}]
 
 
-def test_all_provider_failures_return_backward_compatible_envelope(monkeypatch):
-    monkeypatch.setenv("BOOK_CAPTURE_METADATA_PROVIDER_ORDER", "google_books,openlibrary")
-    monkeypatch.setattr(resolve_metadata, "_from_google_books", lambda **_kwargs: (None, "google failed"))
-    monkeypatch.setattr(resolve_metadata, "_from_openlibrary", lambda **_kwargs: (None, "open failed"))
+def test_all_provider_failures_return_backward_compatible_envelope():
+    resolver = FakeResolver((None, None, ["google failed", "open failed"]))
 
-    result = resolve_metadata.resolve_book_metadata(ISBN)
+    result = resolve_metadata.resolve_book_metadata(ISBN, resolver=resolver)
 
     assert result == {
         "stage": "resolve_metadata",
@@ -49,3 +40,13 @@ def test_all_provider_failures_return_backward_compatible_envelope(monkeypatch):
         "metadata": None,
         "warnings": ["google failed", "open failed"],
     }
+
+
+def test_title_lookup_works_without_isbn_and_invalid_isbn_is_rejected():
+    resolver = FakeResolver(({"title": "Dune"}, "9780441013593", []))
+    by_title = resolve_metadata.resolve_book_metadata(None, title="Dune", author="Frank Herbert", resolver=resolver)
+    invalid = resolve_metadata.resolve_book_metadata("123", resolver=resolver)
+
+    assert by_title["ok"] is True and by_title["isbn13"] == "9780441013593"
+    assert resolver.calls[0] == {"isbn13": None, "title": "Dune", "author": "Frank Herbert"}
+    assert invalid["ok"] is False and len(resolver.calls) == 1

@@ -6,8 +6,6 @@ from typing import Any
 import pytest
 
 import google_books
-import migrate_goodreads_csv
-import resolve_metadata
 
 ISBN = "9780306406157"
 OTHER_ISBN = "9780201633610"
@@ -175,39 +173,3 @@ def test_response_normalization_is_defensive():
     assert metadata["page_count"] is None
     assert metadata["cover_image"].startswith("https://")
     assert "zoom=2" in metadata["cover_image"]
-
-
-def test_photo_and_migration_wrappers_call_shared_client(monkeypatch: pytest.MonkeyPatch):
-    calls: list[tuple[str, dict]] = []
-
-    def fake_search(query: str, **kwargs):
-        calls.append((query, kwargs))
-        return _normalized_metadata(), ISBN, None
-
-    monkeypatch.setattr(resolve_metadata, "search_google_books", fake_search)
-    monkeypatch.setattr(migrate_goodreads_csv, "search_google_books", fake_search)
-
-    photo_metadata, photo_warning = resolve_metadata._from_google_books(ISBN, 3, "test-agent")
-    migration_metadata, migration_isbn, migration_warning = migrate_goodreads_csv._google_books_enrich(
-        "Test Book", "Test Author", ISBN, 3, 0, 0, ""
-    )
-
-    assert photo_metadata and photo_warning is None
-    assert migration_metadata and migration_isbn == ISBN and migration_warning is None
-    assert [query for query, _kwargs in calls] == [f"isbn:{ISBN}", f"isbn:{ISBN}"]
-
-
-def _normalized_metadata() -> dict:
-    return {
-        "authors": ["Test Author"],
-        "categories": ["Testing"],
-        "cover_image": None,
-        "description": "Description",
-        "language": "en",
-        "page_count": 200,
-        "published_date": "2024",
-        "publisher": "Test Press",
-        "source": "google_books",
-        "source_url": None,
-        "title": "Test Book",
-    }

@@ -46,7 +46,7 @@ def test_upsert_is_idempotent_and_writes_rich_note_only_in_tmp_path(tmp_path: Pa
     assert second["ok"] is True and second["updated"] is False
     assert note_path.read_text(encoding="utf-8") == first_content
     assert "isbn_13: \"9780306406157\"" in first_content
-    assert "## Sinopse" in first_content
+    assert "## Summary" in first_content
     assert '  - "software-testing"' in first_content
 
 
@@ -71,3 +71,38 @@ def test_upsert_rejects_explicit_target_outside_vault(tmp_path: Path):
     result = upsert_note(_payload(), str(vault), "Books", str(outside))
     assert result["ok"] is False
     assert not outside.exists()
+
+
+def test_note_language_pt_uses_portuguese_headings(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("BOOK_CAPTURE_NOTE_LANGUAGE", "pt")
+    payload = _payload()
+    payload["metadata"]["description"] = None
+    note_path = tmp_path / "Books" / "pt.md"
+    upsert_note(payload=payload, vault_path=str(tmp_path), notes_dir="Books", target_note=str(note_path))
+    content = note_path.read_text(encoding="utf-8")
+    assert "## Sinopse" in content
+    assert "Obra de Test Author, publicada por Test Press (2024)." in content
+
+
+def test_upsert_refuses_to_write_without_an_existing_vault(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("BOOK_CAPTURE_VAULT_PATH", raising=False)
+    monkeypatch.chdir(tmp_path)
+    missing = upsert_note(payload=_payload(), vault_path="", notes_dir="Books")
+    not_a_dir = upsert_note(payload=_payload(), vault_path=str(tmp_path / "nope"), notes_dir="Books")
+    assert missing["ok"] is False and not_a_dir["ok"] is False
+    assert "vault" in missing["error"]
+    assert list(tmp_path.rglob("*.md")) == []
+
+
+def test_related_links_only_scan_configured_folders(tmp_path: Path, monkeypatch):
+    learnings = tmp_path / "Notes" / "testing ideas.md"
+    learnings.parent.mkdir(parents=True)
+    learnings.write_text("# Testing ideas\n", encoding="utf-8")
+
+    monkeypatch.delenv("BOOK_CAPTURE_RELATED_DIRS", raising=False)
+    first = upsert_note(payload=_payload(), vault_path=str(tmp_path), notes_dir="Books")
+    assert first["related_links"] == []
+
+    monkeypatch.setenv("BOOK_CAPTURE_RELATED_DIRS", "Notes")
+    second = upsert_note(payload=_payload(), vault_path=str(tmp_path), notes_dir="Books")
+    assert second["related_links"] == ["[[Notes/testing ideas]]"]

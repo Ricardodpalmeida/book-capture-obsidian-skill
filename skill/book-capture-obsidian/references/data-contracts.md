@@ -47,7 +47,7 @@ Secrets are excluded from every envelope, including provider warnings. Metadata 
     "language": "en",
     "categories": ["..."],
     "cover_image": "...",
-    "source": "google_books|openlibrary",
+    "source": "openlibrary|google_books",
     "source_url": "..."
   },
   "warnings": []
@@ -76,7 +76,9 @@ Secrets are excluded from every envelope, including provider warnings. Metadata 
 }
 ```
 
-Note: `published_date` is used internally to extract `year` but is not stored in the note frontmatter.
+Optional top-level keys: `shelf` (default `inbox`), `goodreads_book_id` (identity when there is no ISBN).
+
+`published_date` is used to derive `year` and is not stored in the note frontmatter.
 
 ## 4) Upsert Output Contract
 
@@ -93,7 +95,7 @@ Note: `published_date` is used internally to extract `year` but is not stored in
   "title": "...",
   "shelf": "inbox",
   "tags": ["book", "science-fiction"],
-  "related_links": ["[[6. Library/...]]", "[[5. Learnings/...]]"]
+  "related_links": ["[[Books/...]]"]
 }
 ```
 
@@ -130,9 +132,41 @@ The ingest pipeline does not call the note upsert when ISBN extraction or metada
     "updated": 0,
     "unchanged": 0,
     "skipped": 0,
+    "moved": 0,
     "total_processed": 0
   },
-  "errors": []
+  "errors": [],
+  "enrichment": {
+    "enabled": true,
+    "stats": {
+      "cache_hits": 0,
+      "network_calls": {"openlibrary": 0, "google_books": 0},
+      "google_skipped_cooldown": 0,
+      "google_skipped_budget": 0,
+      "rate_limited": {"openlibrary": 0, "google_books": 0}
+    },
+    "warnings": {"<warning text>": 0}
+  }
+}
+```
+
+## 7) Dashboard Output (`generate_dashboard.py`)
+
+```json
+{
+  "stage": "generate_dashboard",
+  "ok": true,
+  "error": null,
+  "dashboard_path": "...",
+  "updated": true,
+  "counts": {
+    "total_books": 0,
+    "to_read_count": 0,
+    "reading_count": 0,
+    "finished_count": 0,
+    "inbox_count": 0
+  },
+  "shelves": {"read": 0}
 }
 ```
 

@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from common_isbn import normalize_isbn
 
 GOOGLE_BOOKS_URL = "https://www.googleapis.com/books/v1/volumes"
+RATE_LIMIT_WARNING = "google books rate limit (429)"
 GOOGLE_BOOKS_FIELDS = (
     "items(id,volumeInfo(title,authors,publisher,publishedDate,description,"
     "pageCount,language,categories,imageLinks,infoLink,industryIdentifiers))"
@@ -150,7 +151,7 @@ def search_google_books(
     user_agent: str = "book-capture-obsidian/1.0",
     api_key: str = "",
     delay_ms: int = 400,
-    max_retries: int = 5,
+    max_retries: int = 2,
     max_retry_after_sec: int = 10,
     request_get: Optional[RequestGet] = None,
     sleep: Sleep = time.sleep,
@@ -198,7 +199,7 @@ def search_google_books(
         if status_code == 429 or (isinstance(status_code, int) and 500 <= status_code <= 599):
             if attempt >= retries:
                 if status_code == 429:
-                    return None, None, "google books rate limit (429)"
+                    return None, None, RATE_LIMIT_WARNING
                 return None, None, f"google books http {status_code}"
             sleep(_retry_delay_seconds(response, attempt, delay_ms, retry_cap))
             continue
