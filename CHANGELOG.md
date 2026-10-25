@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.3
+
+- Security: backslashes in external text are escaped too, so a backslash placed before a backtick can no longer switch the 1.3.2 escaping back off.
+
 ## 1.3.2
 
 - Security: titles and summaries from external sources can no longer inject code blocks or Dataview JS queries into book notes. Backticks and tildes in that text are escaped. Existing notes are rewritten safely on the next run.

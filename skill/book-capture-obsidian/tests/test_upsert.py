@@ -139,3 +139,17 @@ def test_external_text_cannot_inject_dataview_code(tmp_path: Path):
     assert "# Sneaky \\`$= dv.el('b', 'x')\\` Title" in body
     second = upsert_note(payload, str(tmp_path), "Books", str(note_path))
     assert second["updated"] is False
+
+
+def test_existing_backslashes_do_not_undo_the_escaping(tmp_path: Path):
+    payload = _payload("Plain Title")
+    payload["metadata"]["description"] = "Trick \\`$= app.vault.getFiles().length\\` and \\\\`= this.file.name\\\\`."
+    note_path = tmp_path / "Books" / "explicit.md"
+    upsert_note(payload, str(tmp_path), "Books", str(note_path))
+    summary = note_path.read_text(encoding="utf-8").split("## Summary\n", 1)[1].split("\n", 1)[0]
+
+    # Every backtick must be preceded by an odd number of backslashes.
+    for i, ch in enumerate(summary):
+        if ch == "`":
+            run = len(summary[:i]) - len(summary[:i].rstrip("\\"))
+            assert run % 2 == 1, summary

@@ -379,7 +379,8 @@ def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[st
 def _inert_markdown(text: str) -> str:
     # External text must not open code spans or fences: with Dataview JS
     # enabled, `$= ...` and dataviewjs blocks would run inside the vault.
-    return text.replace("`", "\\`").replace("~", "\\~")
+    # Backslashes go first, or an existing "\\`" would turn the escape back off.
+    return text.replace("\\", "\\\\").replace("`", "\\`").replace("~", "\\~")
 
 
 def _render_managed_block(
