@@ -1,10 +1,19 @@
-# Book Capture Obsidian Skill
+# 📚 Book Capture for Obsidian
 
-Portable OpenClaw skill to capture books into Obsidian from:
-- photos (barcode first, OCR fallback)
-- Goodreads CSV exports
+**Snap a cover, scan a barcode or drop in your Goodreads export, and get clean, linked book notes in Obsidian, plus a live library dashboard.**
 
-It writes deterministic Markdown notes, preserves user-written sections, and can generate a library dashboard.
+An OpenClaw skill that does the boring parts of keeping a reading library:
+
+- **Any input.** A cover or barcode photo (barcode first, OCR fallback), an ISBN, a title, or a whole Goodreads CSV.
+- **Quota-safe metadata.** Open Library first, a local cache, and Google Books only to fill gaps, with a per-run budget and an automatic pause after a rate limit. Re-running a 600-book import costs no API calls.
+- **Your notes stay yours.** Re-runs refresh metadata and never touch `## User Notes`. Nothing is ever deleted.
+- **A dashboard that keeps up.** Dataview views of what you are reading, what is next and what you finished, by shelf.
+
+```bash
+openclaw skills install @ricardodpalmeida/book-capture-obsidian
+```
+
+On ClawHub: [book-capture-obsidian](https://clawhub.ai/ricardodpalmeida/book-capture-obsidian). Changes are in [CHANGELOG.md](CHANGELOG.md).
 
 ## Repository Layout
 
@@ -172,3 +181,14 @@ This creates `dist/book-capture-obsidian-<timestamp>.skill.tgz` plus checksum.
 - ClawHub skill publication
 
 Use `RELEASE_READINESS.md` checklist before publishing.
+
+## More from the author
+
+Made by Ricardo Pacheco de Almeida. I write about applied AI, agents and enterprise architecture at [ricbits](https://me.ricbits.cc).
+
+| Skill | What it does |
+|-------|--------------|
+| [whetstone](https://github.com/Ricardodpalmeida/whetstone) | Makes a coding agent size every change by risk before it touches anything, then scale the process to match. |
+| [LadybugDB openCypher](https://clawhub.ai/ricardodpalmeida/ladybug-opencypher-updated) | Design and query LadybugDB graphs with openCypher, including imports, full-text search and Neo4j query adaptation. |
+| [Microsoft Learn MCP](https://clawhub.ai/ricardodpalmeida/mslearn-mcp) | Grounds Azure, .NET, Microsoft 365 and Power Platform answers in official Microsoft Learn docs. |
+| [Excalidraw Diagrams for Obsidian](https://clawhub.ai/ricardodpalmeida/excalidraw-diagrams) | Turns boxes and arrows into clean, hand-drawn Excalidraw diagrams for Obsidian or excalidraw.com. |

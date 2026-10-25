@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1
+
+- Sharper description and README, plus links to the author's other skills and site. No code changes.
+
 ## 1.3.0 (unreleased)
 
 - Quota-aware metadata: Open Library first, Google Books only for missing fields, SQLite cache, per-run Google budget and a persisted cooldown after HTTP 429. Goodreads dry runs make no network calls; `--limit` for small batches.
