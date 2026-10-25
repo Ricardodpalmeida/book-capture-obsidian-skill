@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.5
+
+- Licensed under MIT-0 (MIT No Attribution), declared in the SKILL.md frontmatter and a LICENSE file. No code changes.
+
 ## 1.3.4
 
 - Security: shelf names in the dashboard's shelf table are escaped like note text, so a crafted shelf name can no longer run Dataview JS. Pipes are escaped too, so they no longer break the table.

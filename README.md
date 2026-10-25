@@ -188,7 +188,7 @@ Use `RELEASE_READINESS.md` checklist before publishing.
 
 ## More from the author
 
-Made by Ricardo Pacheco de Almeida. I write about applied AI, agents and enterprise architecture at [ricbits](https://me.ricbits.cc).
+Made by Ricardo Pacheco Almeida. I write about applied AI, agents and enterprise architecture at [ricbits](https://me.ricbits.cc).
 
 | Skill | What it does |
 |-------|--------------|

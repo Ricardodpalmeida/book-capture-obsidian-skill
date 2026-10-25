@@ -1,6 +1,7 @@
 ---
 name: book-capture-obsidian
 description: "Turn a cover photo, a barcode, an ISBN or a whole Goodreads export into clean Obsidian book notes with covers and summaries, plus a library dashboard. Quota-safe: Open Library first, cached lookups, Google Books only to fill gaps. Use when the user wants to catalogue, log or import books into Obsidian."
+license: MIT-0
 homepage: https://github.com/Ricardodpalmeida/book-capture-obsidian-skill
 metadata:
   {
@@ -51,4 +52,4 @@ Lookups send the book's ISBN, or its title and author, to Open Library (openlibr
 
 ## More from the author
 
-Made by Ricardo Pacheco de Almeida, who writes about applied AI at [ricbits](https://me.ricbits.cc). Other OpenClaw skills: [whetstone](https://github.com/Ricardodpalmeida/whetstone), [LadybugDB openCypher](https://clawhub.ai/ricardodpalmeida/ladybug-opencypher-updated), [Microsoft Learn MCP](https://clawhub.ai/ricardodpalmeida/mslearn-mcp), [Excalidraw Diagrams for Obsidian](https://clawhub.ai/ricardodpalmeida/excalidraw-diagrams).
+Made by Ricardo Pacheco Almeida, who writes about applied AI at [ricbits](https://me.ricbits.cc). Other OpenClaw skills: [whetstone](https://github.com/Ricardodpalmeida/whetstone), [LadybugDB openCypher](https://clawhub.ai/ricardodpalmeida/ladybug-opencypher-updated), [Microsoft Learn MCP](https://clawhub.ai/ricardodpalmeida/mslearn-mcp), [Excalidraw Diagrams for Obsidian](https://clawhub.ai/ricardodpalmeida/excalidraw-diagrams).
