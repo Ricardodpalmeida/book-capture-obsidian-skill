@@ -67,3 +67,23 @@ def test_rows_without_isbn_are_kept_and_rerun_is_idempotent(tmp_path: Path):
     assert 'goodreads_book_id: "0"' in (tmp_path / "Books").joinpath(
         sorted(p.name for p in (tmp_path / "Books").glob("*.md"))[0]
     ).read_text(encoding="utf-8")
+
+
+def test_shelf_grouping_stays_inside_the_vault_and_never_deletes(tmp_path: Path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    csv_path = tmp_path / "evil.csv"
+    csv_path.write_text(
+        HEADER + '1,Same,Author,,,P,2020,../../escape,\n' + '2,Same,Author,,,P,2020,read,\n',
+        encoding="utf-8",
+    )
+
+    result = migrate_goodreads_csv.migrate_csv(
+        str(csv_path), str(vault), "Books", dry_run=False, group_by_shelf=True, enrich=False
+    )
+
+    outside = [p for p in tmp_path.rglob("*.md") if vault not in p.parents]
+    assert outside == []
+    assert len(list(vault.rglob("*.md"))) == 2
+    assert (vault / "Books" / "escape").is_dir()
+    assert result["stats"]["created"] == 2

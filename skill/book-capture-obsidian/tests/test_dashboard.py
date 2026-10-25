@@ -50,3 +50,16 @@ def test_cli_requires_vault(tmp_path: Path, monkeypatch, capsys):
     monkeypatch.delenv("BOOK_CAPTURE_VAULT_PATH", raising=False)
     assert generate_dashboard.main(["--vault-path", str(tmp_path / "missing")]) == 1
     assert "vault" in capsys.readouterr().out
+
+
+def test_dashboard_path_cannot_escape_the_vault(tmp_path: Path):
+    vault = tmp_path / "vault"
+    _note(vault / "Books" / "a.md", "read")
+    result = generate_dashboard.generate_dashboard(
+        vault_path=str(vault),
+        notes_dir="Books",
+        dashboard_file="../outside.md",
+        template_file=str(generate_dashboard.DEFAULT_TEMPLATE),
+    )
+    assert result["ok"] is False and "escapes" in result["error"]
+    assert not (tmp_path / "outside.md").exists()

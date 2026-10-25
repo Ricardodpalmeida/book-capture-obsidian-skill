@@ -37,9 +37,13 @@ The vault path is mandatory: ask the user for it if `BOOK_CAPTURE_VAULT_PATH` is
 
 Open Library is queried first (no key, no daily quota). Google Books only fills fields that are still missing. Results are cached on disk for 180 days, so re-running an import costs no API calls. Google gets at most 100 requests per run, and a rate-limit response pauses it for an hour across runs. When the JSON reports `google_books skipped` or `paused`, the notes are still written with Open Library data; tell the user, and suggest setting `BOOK_CAPTURE_GOOGLE_API_KEY` if they want richer descriptions. Settings: `references/configuration.md`.
 
+## Network and privacy
+
+Lookups send the book's ISBN, or its title and author, to Open Library (openlibrary.org) and, only for fields still missing, to Google Books (googleapis.com). Nothing else leaves the machine: no photos, notes or vault paths. Tell the user this before a large Goodreads import. `--no-enrich` keeps an import fully local, and `BOOK_CAPTURE_METADATA_PROVIDER_ORDER=openlibrary` excludes Google.
+
 ## Rules
 
-- Write only inside the vault the user named. Never delete notes; the scripts move a note only to rename it.
+- Write only inside the vault the user named. The scripts create and update notes there and move a note only to rename it or file it on a shelf; they never delete notes.
 - Re-running is safe: notes are matched by ISBN (or Goodreads Book Id) and the `## User Notes` section is always preserved.
 - Do not store API keys in notes, JSON files or chat replies.
 - When something fails, check `references/troubleshooting.md` before changing settings.

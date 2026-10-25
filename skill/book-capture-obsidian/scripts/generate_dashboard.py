@@ -108,9 +108,14 @@ def _render_template(template: str, values: Dict[str, Any]) -> str:
 
 
 def generate_dashboard(vault_path: str, notes_dir: str, dashboard_file: str, template_file: str) -> Dict[str, Any]:
-    vault = Path(vault_path).expanduser()
-    books_root = vault / Path(notes_dir)
-    dashboard_path = vault / Path(dashboard_file)
+    vault = Path(vault_path).expanduser().resolve()
+    books_root = (vault / Path(notes_dir)).resolve()
+    dashboard_path = (vault / Path(dashboard_file)).resolve()
+    for label, path in (("notes directory", books_root), ("dashboard file", dashboard_path)):
+        if path != vault and vault not in path.parents:
+            return make_result(STAGE, ok=False, error=f"{label} escapes the vault: {path}")
+    if dashboard_path.suffix.lower() != ".md":
+        return make_result(STAGE, ok=False, error=f"dashboard file must be a .md note: {dashboard_path}")
 
     if not books_root.exists():
         return make_result(STAGE, ok=False, error=f"books directory not found: {books_root}")

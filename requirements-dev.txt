@@ -1,2 +1,1 @@
--r requirements.txt
-pytest>=8.0.0,<9
+-r skill/book-capture-obsidian/requirements-dev.txt

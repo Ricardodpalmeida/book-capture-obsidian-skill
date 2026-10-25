@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
-"""Migrate Goodreads CSV exports into Obsidian notes with deterministic upsert."""
+"""Migrate a Goodreads CSV export into Obsidian notes.
+
+Without --dry-run this creates and updates notes in the vault (user notes are
+kept) and, with --group-by-shelf, moves notes into shelf folders. Enrichment
+sends each book's ISBN or title and author to Open Library and, for missing
+fields, Google Books; --no-enrich keeps everything local.
+"""
 
 from __future__ import annotations
 
 import argparse
 import csv
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -76,7 +83,9 @@ def _normalize_slug(value: str) -> str:
 
 
 def _shelf_subfolder(shelf: str) -> str:
-    return _normalize_slug(shelf)
+    """Single safe folder name for a shelf: letters, digits and hyphens only."""
+    slug = re.sub(r"[^a-z0-9-]+", "-", _normalize_slug(shelf)).strip("-")
+    return slug or "unknown"
 
 
 def _pick_isbn13(isbn13_raw: str, isbn10_raw: str) -> Optional[str]:
@@ -189,8 +198,10 @@ def migrate_csv(
     errors: List[Dict[str, Any]] = []
     warning_counts: Dict[str, int] = {}
 
-    vault = Path(vault_path).expanduser()
-    root = vault / Path(notes_dir)
+    vault = Path(vault_path).expanduser().resolve()
+    root = (vault / Path(notes_dir)).resolve()
+    if root != vault and vault not in root.parents:
+        return make_result(STAGE, ok=False, error=f"notes directory escapes the vault: {root}")
 
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -234,20 +245,16 @@ def migrate_csv(
             if group_by_shelf:
                 note_path = Path(str(result.get("note_path") or ""))
                 if note_path.exists():
-                    shelf_value = str(payload.get("shelf") or "inbox")
-                    shelf_dir = root / _shelf_subfolder(shelf_value)
-                    shelf_dir.mkdir(parents=True, exist_ok=True)
+                    shelf_dir = (root / _shelf_subfolder(str(payload.get("shelf") or "inbox"))).resolve()
                     target = shelf_dir / note_path.name
-                    if note_path != target:
+                    if note_path.resolve() != target:
                         if target.exists():
-                            # Keep existing target and remove duplicate source file
-                            try:
-                                note_path.unlink()
-                            except Exception:
-                                pass
+                            # Never delete or overwrite: a same-named note may be a different book.
+                            errors.append({"line": idx, "error": f"not moved, target exists: {target.name}"})
                         else:
+                            shelf_dir.mkdir(parents=True, exist_ok=True)
                             note_path.rename(target)
-                        moved += 1
+                            moved += 1
 
     total_processed = created + updated + unchanged + skipped
 
