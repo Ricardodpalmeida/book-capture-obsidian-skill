@@ -838,6 +838,7 @@ def _upsert_note_core(payload: MetadataDict, vault_path: str, notes_dir: str, ta
         preserved_user_content = bool(user_notes.strip())
 
     new_content = managed.rstrip() + "\n\n" + user_notes.strip() + "\n"
+    new_content = new_content.replace("\r\n", "\n").replace("\r", "\n")
 
     existing_content = note_path.read_text(encoding="utf-8") if note_path.exists() else None
     updated = existing_content != new_content

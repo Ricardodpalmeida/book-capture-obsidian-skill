@@ -59,7 +59,9 @@ def _empty(value: Any) -> bool:
 def _clean_text(value: Any) -> Optional[str]:
     if value is None:
         return None
-    text = str(value).strip()
+    # Open Library descriptions use CRLF; a stray \r makes every re-run
+    # rewrite the note because read_text() folds it away on the way back.
+    text = str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
     return text or None
 
 
@@ -237,6 +239,13 @@ class MetadataResolver:
             found, found_isbn, warning = self._lookup_provider(provider, isbn, title, author)
             if warning:
                 warnings.append(warning)
+            if not found and isbn and title and provider == OPENLIBRARY:
+                # Many editions (often non-English ones) have no Open Library
+                # ISBN record although the work is there; Open Library has no
+                # daily quota, so try the title search before Google.
+                found, _ignored, warning = self._lookup_provider(provider, None, title, author)
+                if warning:
+                    warnings.append(warning)
             if not found:
                 continue
             if not isbn and found_isbn:
@@ -456,7 +465,7 @@ class MetadataResolver:
             return None, None, None, False
         # The search doc lists ISBNs of every edition, so none is adopted here:
         # a wrong edition ISBN would break deduplication.
-        fields = "key,title,author_name,publisher,first_publish_year,cover_i,subject,number_of_pages_median"
+        fields = "key,title,author_name,first_publish_year,cover_i,subject,number_of_pages_median"
         url = f"https://openlibrary.org/search.json?title={quote(title)}&limit=5&fields={fields}"
         if author:
             url += f"&author={quote(author)}"
@@ -483,7 +492,6 @@ class MetadataResolver:
         work_desc = work.get("description")
         description = work_desc.get("value") if isinstance(work_desc, dict) else work_desc
         cover_id = doc.get("cover_i")
-        publishers = _clean_str_list(doc.get("publisher"))
         year = doc.get("first_publish_year")
         key = _clean_text(doc.get("key"))
         metadata = {
@@ -494,7 +502,9 @@ class MetadataResolver:
             "language": None,
             "page_count": _normalize_page_count(doc.get("number_of_pages_median")),
             "published_date": str(year) if year else None,
-            "publisher": publishers[0] if publishers else None,
+            # A work groups every edition, so its publisher list says nothing
+            # about the user's copy.
+            "publisher": None,
             "source": OPENLIBRARY,
             "source_url": f"https://openlibrary.org{key}" if key else None,
             "title": _clean_text(doc.get("title")),

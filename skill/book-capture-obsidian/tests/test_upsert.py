@@ -106,3 +106,17 @@ def test_related_links_only_scan_configured_folders(tmp_path: Path, monkeypatch)
     monkeypatch.setenv("BOOK_CAPTURE_RELATED_DIRS", "Notes")
     second = upsert_note(payload=_payload(), vault_path=str(tmp_path), notes_dir="Books")
     assert second["related_links"] == ["[[Notes/testing ideas]]"]
+
+
+def test_crlf_description_does_not_rewrite_note_on_every_run(tmp_path: Path):
+    payload = _payload()
+    payload["metadata"]["description"] = "First paragraph.\r\n\r\nSecond paragraph."
+    note_path = tmp_path / "Books" / "crlf.md"
+    first = upsert_note(payload=payload, vault_path=str(tmp_path), notes_dir="Books", target_note=str(note_path))
+    mtime = note_path.stat().st_mtime_ns
+    second = upsert_note(payload=payload, vault_path=str(tmp_path), notes_dir="Books", target_note=str(note_path))
+
+    assert first["created"] is True
+    assert second["updated"] is False
+    assert note_path.stat().st_mtime_ns == mtime
+    assert b"\r" not in note_path.read_bytes()

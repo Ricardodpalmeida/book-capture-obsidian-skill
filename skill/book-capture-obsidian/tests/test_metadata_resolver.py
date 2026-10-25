@@ -305,3 +305,31 @@ def test_google_title_search_needs_matching_title_and_drops_isbn():
     metadata, isbn, _w = resolver.lookup(title="Test Book", author="Test Author")
     assert metadata["description"] == "A Google description"
     assert isbn is None
+
+
+def test_isbn_miss_falls_back_to_openlibrary_title_search_before_google():
+    # Real case: Ensaio sobre a Cegueira (9789722110723) has no Open Library
+    # ISBN record, but the title search finds the work.
+    clock, log = Clock(), []
+    search = {"docs": [{"key": "/works/OL27420W", "title": "Ensaio Sobre a Cegueira",
+                        "author_name": ["José Saramago"], "cover_i": 10482411,
+                        "publisher": ["Haenaem"]}]}
+    fake_get = router(
+        {
+            "https://openlibrary.org/api/books": lambda: FakeResponse(200, {}),
+            "https://openlibrary.org/search.json": lambda: FakeResponse(200, search),
+            "https://openlibrary.org/works/OL27420W.json": lambda: FakeResponse(
+                200, {"description": "Uma cegueira branca.\r\n\r\nSegundo paragrafo."}),
+        },
+        log,
+    )
+    resolver = make_resolver(fake_get, clock)
+    base = {"title": "Ensaio sobre a Cegueira", "authors": ["José Saramago"], "publisher": None,
+            "description": None, "cover_image": None}
+    metadata, isbn, _w = resolver.lookup(isbn13="9789722110723", title="Ensaio sobre a Cegueira",
+                                         author="José Saramago", base=base)
+    assert isbn == "9789722110723"
+    assert metadata["cover_image"] == "https://covers.openlibrary.org/b/id/10482411-L.jpg"
+    assert metadata["description"] == "Uma cegueira branca.\n\nSegundo paragrafo."
+    assert metadata["publisher"] is None  # work-level publishers belong to other editions
+    assert not any("googleapis" in u for u in log)
