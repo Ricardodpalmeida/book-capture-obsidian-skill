@@ -32,7 +32,8 @@ TEST_DIR="skill/book-capture-obsidian/tests"
 if [ -d "$TEST_DIR" ] && find "$TEST_DIR" -type f \( -name "test_*.py" -o -name "*_test.py" \) | grep -q .; then
     run_pytest -q "$TEST_DIR"
 else
-    echo "==> Unit tests skipped (no tests found at $TEST_DIR)"
+    echo "ERROR: no unit tests found at $TEST_DIR" >&2
+    exit 2
 fi
 
 echo "==> Running script self-checks"

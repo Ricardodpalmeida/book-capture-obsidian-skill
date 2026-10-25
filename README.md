@@ -35,6 +35,10 @@ brew install python tesseract zbar
 
 ## Python runtime
 
+Installed skill: `sh <skill>/scripts/setup.sh` creates `<skill>/.venv` and installs the runtime packages.
+
+From a repository checkout:
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -62,23 +66,22 @@ pip install -r requirements-dev.txt
 Order of extraction:
 1. `zbarimg` CLI (primary barcode)
 2. `pyzbar` (secondary barcode)
-3. `pytesseract` OCR fallback
+3. `pytesseract` OCR
+4. Direct `tesseract` CLI when `pytesseract` is unavailable
 
 If one component is missing, the pipeline degrades gracefully and continues with available stages.
+
+Photo capture and Goodreads import share one quota-aware metadata resolver. Open Library is queried first; Google Books only fills fields that are still empty. Answers are cached in `~/.cache/book-capture-obsidian/metadata.sqlite3` (180 days for hits, 14 for misses), Google is capped at 100 requests per run, and an HTTP 429 pauses Google for an hour across runs instead of retrying every row. A Goodreads dry run makes no network calls. Set `BOOK_CAPTURE_GOOGLE_API_KEY` for a much larger Google quota.
 
 ## Configuration
 
 Machine-agnostic configuration via environment variables:
 
 ```bash
-export BOOK_CAPTURE_VAULT_PATH="/path/to/your/vault"
-export BOOK_CAPTURE_NOTES_DIR="Library/Books"
-export BOOK_CAPTURE_DASHBOARD_FILE="Library/Library Dashboard.md"
-
-export BOOK_CAPTURE_ENABLE_ZBARIMG=true
-export BOOK_CAPTURE_ENABLE_PYZBAR=true
-export BOOK_CAPTURE_ENABLE_OCR=true
-export BOOK_CAPTURE_OCR_LANG=eng
+export BOOK_CAPTURE_VAULT_PATH="/path/to/your/vault"   # required; scripts refuse to write without it
+export BOOK_CAPTURE_NOTES_DIR="Books"                  # default
+export BOOK_CAPTURE_NOTE_LANGUAGE="en"                 # or "pt" for Portuguese headings
+export BOOK_CAPTURE_GOOGLE_API_KEY="..."               # optional
 ```
 
 Full reference: `skill/book-capture-obsidian/references/configuration.md`
@@ -115,7 +118,7 @@ python skill/book-capture-obsidian/scripts/migrate_goodreads_csv.py \
   --dry-run
 ```
 
-Live migration:
+Try a small live batch with `--limit 20`, then run the full migration:
 
 ```bash
 python skill/book-capture-obsidian/scripts/migrate_goodreads_csv.py \
@@ -129,8 +132,7 @@ python skill/book-capture-obsidian/scripts/migrate_goodreads_csv.py \
 ```bash
 python skill/book-capture-obsidian/scripts/generate_dashboard.py \
   --vault-path "$BOOK_CAPTURE_VAULT_PATH" \
-  --notes-dir "$BOOK_CAPTURE_NOTES_DIR" \
-  --dashboard-file "$BOOK_CAPTURE_DASHBOARD_FILE"
+  --notes-dir "$BOOK_CAPTURE_NOTES_DIR"
 ```
 
 ## QA and Security

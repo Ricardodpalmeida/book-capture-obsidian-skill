@@ -1,86 +1,58 @@
 # Goodreads CSV Migration Runbook
 
-Use this runbook to migrate Goodreads exports into Obsidian notes safely.
+Import a Goodreads library export into Obsidian notes without burning API quota or duplicating notes.
 
 ## Input
 
-- Goodreads CSV export file
-- Configured vault path (`BOOK_CAPTURE_VAULT_PATH`)
-- Configured notes dir (`BOOK_CAPTURE_NOTES_DIR`)
+- The Goodreads export (My Books, then Import and export, then Export Library). UTF-8, with or without BOM.
+- Columns used: `Book Id`, `Title`, `Author`, `ISBN`, `ISBN13`, `Publisher`, `Year Published`, `Exclusive Shelf`, `Bookshelves`. Only `Title` is mandatory.
+- An existing vault directory.
 
-## Preflight
-
-1. Ensure CSV is UTF-8 (`utf-8-sig` is accepted).
-2. Ensure required columns exist:
-   - `Title`, `Author`, `ISBN`, `ISBN13`, `Exclusive Shelf`
-3. Install dependencies (`requirements.txt` + `requirements-dev.txt` for tests).
-4. Run security scan before release packaging:
-   - `sh scripts/security_scan_no_pii.sh`
-5. Set migration controls:
-   - `BOOK_CAPTURE_ENABLE_GOOGLE_ENRICH=true`
-   - `BOOK_CAPTURE_GOOGLE_DELAY_MS`
-   - `BOOK_CAPTURE_GOOGLE_MAX_RETRIES`
-
-## Dry Run First
+## 1. Dry run (no network, no writes)
 
 ```bash
-python skill/book-capture-obsidian/scripts/migrate_goodreads_csv.py \
-  --csv ./input/goodreads_library_export.csv \
-  --vault-path "$BOOK_CAPTURE_VAULT_PATH" \
-  --notes-dir "$BOOK_CAPTURE_NOTES_DIR" \
-  --group-by-shelf \
-  --dry-run
+PY {baseDir}/scripts/migrate_goodreads_csv.py --csv export.csv --vault-path "$VAULT" --dry-run
 ```
 
-Review output stats and row-level errors.
+Check `stats.skipped` and `errors`. A dry run never calls Open Library or Google Books, so it can be repeated freely.
 
-## Live Migration
+## 2. Small live batch
 
 ```bash
-python skill/book-capture-obsidian/scripts/migrate_goodreads_csv.py \
-  --csv ./input/goodreads_library_export.csv \
-  --vault-path "$BOOK_CAPTURE_VAULT_PATH" \
-  --notes-dir "$BOOK_CAPTURE_NOTES_DIR" \
-  --group-by-shelf
+PY {baseDir}/scripts/migrate_goodreads_csv.py --csv export.csv --vault-path "$VAULT" --limit 20
 ```
 
-## Mapping Rules
+Open two or three notes in Obsidian and check them before importing everything. `enrichment.stats` shows how many lookups hit the network, how many came from the cache, and whether Google was skipped.
 
-- `Title` -> note title
-- `Author` -> `author`
-- `ISBN13` / `ISBN` -> `isbn_13` (when available)
-- `Book Id` -> `goodreads_book_id` (fallback identity key)
-- `Exclusive Shelf` -> `shelf` property
-- `Date Read` -> `status=finished` fallback when shelf is custom
-- `Bookshelves` -> tags + categories
-- Always include tag `book`
-- Add normalized tag `shelf-<exclusive-shelf>`
-- Query Google Books for all rows to enrich synopsis/publisher/date/metadata
-
-## Output Shape
-
-- Filename format: `Title - First Author - Publisher - Year.md`
-- No auto markers (`BOOK_CAPTURE:BEGIN/END AUTO`)
-- No metadata audit boilerplate section
-- Keep `## Sinopse` with concise description text
-
-## Dedup Strategy
-
-- Primary: `isbn_13`
-- Fallback: `goodreads_book_id`
-- If note exists, perform idempotent update
-- Preserve user notes section
-
-## Post Migration
-
-1. Refresh dashboard:
+## 3. Full import
 
 ```bash
-python skill/book-capture-obsidian/scripts/generate_dashboard.py \
-  --vault-path "$BOOK_CAPTURE_VAULT_PATH" \
-  --notes-dir "$BOOK_CAPTURE_NOTES_DIR" \
-  --dashboard-file "$BOOK_CAPTURE_DASHBOARD_FILE"
+PY {baseDir}/scripts/migrate_goodreads_csv.py --csv export.csv --vault-path "$VAULT" [--group-by-shelf]
 ```
 
-2. Validate random sample notes for metadata quality.
-3. Re-run migration after API cooldown when Google returns 429 rate limits.
+The rows already imported in step 2 are served from the cache. If Google hits its quota, the run continues with Open Library data and reports `google_books skipped` in `enrichment.warnings`. Re-run the same command later (after the cooldown, or with `BOOK_CAPTURE_GOOGLE_API_KEY` set) to fill the gaps; existing notes are updated in place.
+
+Use `--no-enrich` to import only what the CSV contains.
+
+## 4. Dashboard
+
+```bash
+PY {baseDir}/scripts/generate_dashboard.py --vault-path "$VAULT"
+```
+
+## Mapping
+
+| Goodreads column | Note |
+| --- | --- |
+| `Title`, `Author` | `title`, `author` (lookups never overwrite these) |
+| `ISBN13`, else `ISBN` | `isbn_13`, `isbn_10` |
+| `Publisher`, `Year Published` | `publisher`, `year` |
+| `Exclusive Shelf` | `shelf` (`to-read`, `currently-reading`, `read` or a custom shelf) |
+| `Bookshelves` | extra tags |
+| `Book Id` | `goodreads_book_id`, written only when the book has no ISBN |
+
+Every note gets the `book` tag. Description, cover and categories come from Open Library, then Google Books for whatever is still missing.
+
+## Identity and re-runs
+
+Notes are matched by `isbn_13`, then by `goodreads_book_id`. Re-running the import updates matching notes, renames them if the canonical filename changed, and always keeps the `## User Notes` section. Filenames follow `Title - Author (Publisher, Year).md`.
