@@ -63,3 +63,20 @@ def test_dashboard_path_cannot_escape_the_vault(tmp_path: Path):
     )
     assert result["ok"] is False and "escapes" in result["error"]
     assert not (tmp_path / "outside.md").exists()
+
+
+def test_shelf_names_cannot_inject_dataview_code(tmp_path: Path):
+    _note(tmp_path / "Library" / "a.md", "`$= app.vault.getFiles().length`")
+    _note(tmp_path / "Library" / "b.md", "a|b ~~~dataviewjs")
+
+    generate_dashboard.generate_dashboard(
+        vault_path=str(tmp_path),
+        notes_dir="Library",
+        dashboard_file="Library/Library Dashboard.md",
+        template_file=str(generate_dashboard.DEFAULT_TEMPLATE),
+    )
+    rendered = (tmp_path / "Library" / "Library Dashboard.md").read_text(encoding="utf-8")
+    table = rendered.split("## By shelf", 1)[1].split("## Recently added", 1)[0]
+
+    assert "| \\`$= app.vault.getfiles().length\\` | 1 |" in table
+    assert "| a\\|b \\~\\~\\~dataviewjs | 1 |" in table

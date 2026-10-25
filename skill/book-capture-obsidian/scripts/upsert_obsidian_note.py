@@ -19,6 +19,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from common_config import get_env_csv, get_env_str
 from common_isbn import isbn13_to_isbn10, normalize_isbn
 from common_json import fail_and_print, make_result, print_json, read_json_file
+from common_markdown import inert_markdown
 
 STAGE = "upsert_obsidian_note"
 BEGIN_MARKER = "<!-- BOOK_CAPTURE:BEGIN AUTO -->"
@@ -376,13 +377,6 @@ def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[st
     return isbn13, goodreads_book_id, clean_metadata, extras, None
 
 
-def _inert_markdown(text: str) -> str:
-    # External text must not open code spans or fences: with Dataview JS
-    # enabled, `$= ...` and dataviewjs blocks would run inside the vault.
-    # Backslashes go first, or an existing "\\`" would turn the escape back off.
-    return text.replace("\\", "\\\\").replace("`", "\\`").replace("~", "\\~")
-
-
 def _render_managed_block(
     isbn13: Optional[str],
     goodreads_book_id: Optional[str],
@@ -428,10 +422,10 @@ def _render_managed_block(
     body_lines = [
         *frontmatter_lines,
         "",
-        f"# {_inert_markdown(metadata['title'])}",
+        f"# {inert_markdown(metadata['title'])}",
         "",
         f"## {labels['summary']}",
-        _inert_markdown(summary),
+        inert_markdown(summary),
     ]
 
     links = [link for link in (related_links or []) if link]
