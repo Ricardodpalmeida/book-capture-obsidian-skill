@@ -376,6 +376,12 @@ def _prepare_metadata(payload: MetadataDict) -> Tuple[Optional[str], Optional[st
     return isbn13, goodreads_book_id, clean_metadata, extras, None
 
 
+def _inert_markdown(text: str) -> str:
+    # External text must not open code spans or fences: with Dataview JS
+    # enabled, `$= ...` and dataviewjs blocks would run inside the vault.
+    return text.replace("`", "\\`").replace("~", "\\~")
+
+
 def _render_managed_block(
     isbn13: Optional[str],
     goodreads_book_id: Optional[str],
@@ -421,10 +427,10 @@ def _render_managed_block(
     body_lines = [
         *frontmatter_lines,
         "",
-        f"# {metadata['title']}",
+        f"# {_inert_markdown(metadata['title'])}",
         "",
         f"## {labels['summary']}",
-        summary,
+        _inert_markdown(summary),
     ]
 
     links = [link for link in (related_links or []) if link]

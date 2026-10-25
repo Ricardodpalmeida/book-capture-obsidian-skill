@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.2
+
+- Security: titles and summaries from external sources can no longer inject code blocks or Dataview JS queries into book notes. Backticks and tildes in that text are escaped. Existing notes are rewritten safely on the next run.
+
 ## 1.3.1
 
 - Sharper description and README, plus links to the author's other skills and site. No code changes.
