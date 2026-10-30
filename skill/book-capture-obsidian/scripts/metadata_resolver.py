@@ -165,7 +165,7 @@ class MetadataResolver:
         google_delay_ms: int = 400,
         google_max_retries: int = 2,
         google_max_retry_after_sec: int = 10,
-        openlibrary_delay_ms: int = 350,
+        openlibrary_delay_ms: int = 1000,
         openlibrary_cooldown_sec: int = 600,
         timeout_sec: int = 12,
         user_agent: str = DEFAULT_USER_AGENT,
@@ -204,7 +204,7 @@ class MetadataResolver:
             "google_max_retry_after_sec": get_env_int(
                 "BOOK_CAPTURE_GOOGLE_MAX_RETRY_AFTER_SECONDS", 10, minimum=0
             ),
-            "openlibrary_delay_ms": get_env_int("BOOK_CAPTURE_OPENLIBRARY_DELAY_MS", 350, minimum=0),
+            "openlibrary_delay_ms": get_env_int("BOOK_CAPTURE_OPENLIBRARY_DELAY_MS", 1000, minimum=0),
             "timeout_sec": get_env_int("BOOK_CAPTURE_HTTP_TIMEOUT_SECONDS", 12, minimum=1),
             "user_agent": get_env_str("BOOK_CAPTURE_USER_AGENT", DEFAULT_USER_AGENT),
         }
@@ -241,8 +241,8 @@ class MetadataResolver:
                 warnings.append(warning)
             if not found and isbn and title and provider == OPENLIBRARY:
                 # Many editions (often non-English ones) have no Open Library
-                # ISBN record although the work is there; Open Library has no
-                # daily quota, so try the title search before Google.
+                # ISBN record although the work is there; try its rate-limited
+                # title search before Google.
                 found, _ignored, warning = self._lookup_provider(provider, None, title, author)
                 if warning:
                     warnings.append(warning)
@@ -311,7 +311,12 @@ class MetadataResolver:
             if author:
                 parts.append(f"inauthor:{author}")
             query = " ".join(parts)
-        self.stats.network_calls[GOOGLE] += 1
+        remaining = self.google_budget - self.stats.network_calls[GOOGLE]
+
+        def counted_get(*args: Any, **kwargs: Any) -> Any:
+            self.stats.network_calls[GOOGLE] += 1
+            return self._get()(*args, **kwargs)
+
         key = self.google_api_key
         metadata, found_isbn, warning = search_google_books(
             query,
@@ -320,9 +325,9 @@ class MetadataResolver:
             user_agent=self.user_agent,
             api_key=key,
             delay_ms=self.google_delay_ms,
-            max_retries=self.google_max_retries,
+            max_retries=min(max(0, self.google_max_retries), remaining - 1),
             max_retry_after_sec=self.google_max_retry_after_sec,
-            request_get=self._get(),
+            request_get=counted_get,
             sleep=self._sleep,
         )
         if warning == RATE_LIMIT_WARNING:

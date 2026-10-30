@@ -5,7 +5,7 @@
 An OpenClaw skill that does the boring parts of keeping a reading library:
 
 - **Any input.** A cover or barcode photo (barcode first, OCR fallback), an ISBN, a title, or a whole Goodreads CSV.
-- **Quota-safe metadata.** Open Library first, a local cache, and Google Books only to fill gaps, with a per-run budget and an automatic pause after a rate limit. Re-running a 600-book import costs no API calls.
+- **Quota-safe metadata.** Open Library first, a local cache, and Google Books only to fill gaps, with a per-run budget and an automatic pause after a rate limit. Valid cache entries avoid repeated lookups; failed or skipped lookups can retry.
 - **Your notes stay yours.** Re-runs refresh metadata and never touch `## User Notes`. Nothing is ever deleted.
 - **A dashboard that keeps up.** Dataview views of what you are reading, what is next and what you finished, by shelf.
 
@@ -26,7 +26,7 @@ On ClawHub: [book-capture-obsidian](https://clawhub.ai/ricardodpalmeida/book-cap
 
 ## Dependencies
 
-## System
+### System
 
 ### Linux (Debian/Ubuntu)
 
@@ -42,7 +42,9 @@ brew update
 brew install python tesseract zbar
 ```
 
-## Python runtime
+### Python runtime
+
+Requires Python 3.10+. Windows setup is in [configuration](skill/book-capture-obsidian/references/configuration.md).
 
 Installed skill: `sh <skill>/scripts/setup.sh` creates `<skill>/.venv` and installs the runtime packages.
 
@@ -55,7 +57,7 @@ pip install -U pip
 pip install -r requirements.txt
 ```
 
-## Python dev/test
+### Python dev/test
 
 ```bash
 pip install -r requirements-dev.txt
@@ -80,7 +82,7 @@ Order of extraction:
 
 If one component is missing, the pipeline degrades gracefully and continues with available stages.
 
-Photo capture and Goodreads import share one quota-aware metadata resolver. Open Library is queried first; Google Books only fills fields that are still empty. Answers are cached in `~/.cache/book-capture-obsidian/metadata.sqlite3` (180 days for hits, 14 for misses), Google is capped at 100 requests per run, and an HTTP 429 pauses Google for an hour across runs instead of retrying every row. A Goodreads dry run makes no network calls. Set `BOOK_CAPTURE_GOOGLE_API_KEY` for a much larger Google quota.
+Photo capture and Goodreads import share one quota-aware metadata resolver. Open Library is queried first; Google Books only fills fields that are still empty. Answers are cached in `~/.cache/book-capture-obsidian/metadata.sqlite3` (180 days for hits, 14 for misses), Google is capped at 100 HTTP attempts per run including retries, and exhausted HTTP 429 retries pause Google for an hour across runs. Open Library requests are spaced at least one second apart by default. A Goodreads dry run makes no network calls. An optional `BOOK_CAPTURE_GOOGLE_API_KEY` uses the associated project quota; additional capacity is not guaranteed.
 
 ## Configuration
 

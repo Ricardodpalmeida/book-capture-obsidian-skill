@@ -2,6 +2,17 @@
 
 Every setting is an environment variable; command-line flags win where both exist. Nothing is machine-specific by default.
 
+## Windows setup
+
+Use Python 3.10+ in a skill-local environment:
+
+```powershell
+python -m venv "<skill>/.venv"
+& "<skill>/.venv/Scripts/python.exe" -m pip install -r "<skill>/requirements.txt"
+```
+
+Use that interpreter as `PY` in the workflows. Photo extraction also needs the selected barcode/OCR runtime; diagnose before installing missing components.
+
 ## Paths
 
 | Variable | Default | Meaning |
@@ -25,19 +36,19 @@ Every setting is an environment variable; command-line flags win where both exis
 
 ## Metadata lookups
 
-Open Library is free and keyless. Google Books without a key shares a small anonymous quota per IP address, which is why bulk imports used to fail with HTTP 429. The resolver now protects that quota in four ways: Open Library goes first, Google only fills fields that are still empty, every answer is cached, and a 429 pauses Google instead of retrying it row after row.
+Open Library is keyless but rate limited: the default one-second gap follows its [unidentified-client limit](https://openlibrary.org/developers/api). Identified clients with contact details may use its higher limit. Google fills gaps; a per-run HTTP-attempt budget, cache and persisted cooldown reduce quota use.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `BOOK_CAPTURE_METADATA_PROVIDER_ORDER` | `openlibrary,google_books` | Lookup order. Later providers only fill gaps. |
 | `BOOK_CAPTURE_ENABLE_ENRICH` | `true` | `false` makes Goodreads imports use only the CSV data. The old name `BOOK_CAPTURE_ENABLE_GOOGLE_ENRICH` still works. |
-| `BOOK_CAPTURE_GOOGLE_API_KEY` | none | Google Books API key (free in Google Cloud). Raises the quota a lot. Never written to notes or output. |
-| `BOOK_CAPTURE_GOOGLE_MAX_REQUESTS_PER_RUN` | `100` | Hard cap on Google requests in one script run. |
-| `BOOK_CAPTURE_GOOGLE_COOLDOWN_SECONDS` | `3600` | After a 429, Google is skipped for this long, across runs. |
+| `BOOK_CAPTURE_GOOGLE_API_KEY` | none | Optional Google Books project key. Quota depends on that project; extra capacity is not guaranteed. Redacted from results. |
+| `BOOK_CAPTURE_GOOGLE_MAX_REQUESTS_PER_RUN` | `100` | Maximum HTTP attempts per run, including retries. |
+| `BOOK_CAPTURE_GOOGLE_COOLDOWN_SECONDS` | `3600` | After exhausted 429 retries, skip Google for this long across runs. |
 | `BOOK_CAPTURE_GOOGLE_MAX_RETRIES` | `2` | Retries for network errors, 429 and 5xx before giving up. |
 | `BOOK_CAPTURE_GOOGLE_DELAY_MS` | `400` | Base backoff between retries (doubles each time). |
 | `BOOK_CAPTURE_GOOGLE_MAX_RETRY_AFTER_SECONDS` | `10` | Upper bound on any single wait. |
-| `BOOK_CAPTURE_OPENLIBRARY_DELAY_MS` | `350` | Minimum gap between Open Library requests. |
+| `BOOK_CAPTURE_OPENLIBRARY_DELAY_MS` | `1000` | Minimum gap between Open Library requests. |
 | `BOOK_CAPTURE_HTTP_TIMEOUT_SECONDS` | `12` | Per-request timeout. |
 | `BOOK_CAPTURE_USER_AGENT` | `book-capture-obsidian/1.3 (+repo URL)` | Sent to both APIs; Open Library asks clients to identify themselves. |
 | `BOOK_CAPTURE_CACHE` | `on` | `off` keeps the cache in memory for the current run only. |
@@ -62,4 +73,4 @@ Missing components degrade in order: `zbarimg`, then `pyzbar`, then `pytesseract
 
 ## Privacy
 
-Raw photos are not copied or kept. Only normalized metadata and Markdown are written. Keys are sent as request parameters to Google only and are redacted from every result and warning.
+Scripts leave source photos in place; they do not upload or copy them. They store metadata/cache and Markdown. API keys go only to Google as request parameters and are redacted from outputs. Obsidian may fetch remote covers when displaying notes.

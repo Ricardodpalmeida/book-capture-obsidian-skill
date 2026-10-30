@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.6
+
+- Condense instructions while preserving workflows, data contracts and user-note protection.
+- Count Google retry attempts against the request budget; use a one-second Open Library interval by default.
+- Fix Windows wiki-link separators and note line endings. Correct cache, quota and cover-privacy claims; document Windows setup.
+
 ## 1.3.5
 
 - Licensed under MIT-0 (MIT No Attribution), declared in the SKILL.md frontmatter and a LICENSE file. No code changes.

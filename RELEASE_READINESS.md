@@ -1,5 +1,7 @@
 # Release Readiness: book-capture-obsidian
 
+Historical v1.0.0 report. It is not evidence of the current version or test results; use the latest changelog, CI run and ClawHub release state.
+
 ## Final Status
 
 **RELEASED (v1.0.0)** with one explicit runtime prerequisite note:

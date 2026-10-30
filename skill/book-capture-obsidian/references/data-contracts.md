@@ -1,5 +1,7 @@
 # Data Contracts
 
+Contents: [1) ISBN Extraction Output (`extract_isbn.py`)](#1-isbn-extraction-output-extract_isbnpy) · [2) Metadata Resolution Output (`resolve_metadata.py`)](#2-metadata-resolution-output-resolve_metadatapy) · [3) Upsert Input Contract (`upsert_obsidian_note.py`)](#3-upsert-input-contract-upsert_obsidian_notepy) · [4) Upsert Output Contract](#4-upsert-output-contract) · [5) Photo Ingest Output (`ingest_photo.py`)](#5-photo-ingest-output-ingest_photopy) · [6) Migration Output (`migrate_goodreads_csv.py`)](#6-migration-output-migrate_goodreads_csvpy) · [7) Dashboard Output (`generate_dashboard.py`)](#7-dashboard-output-generate_dashboardpy) · [Safety Rules](#safety-rules)
+
 All scripts return deterministic JSON envelopes:
 
 ```json
@@ -149,6 +151,8 @@ The ingest pipeline does not call the note upsert when ISBN extraction or metada
   }
 }
 ```
+
+`network_calls.google_books` counts HTTP attempts, including retries, against the per-run budget.
 
 ## 7) Dashboard Output (`generate_dashboard.py`)
 

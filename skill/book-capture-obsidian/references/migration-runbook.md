@@ -30,9 +30,9 @@ Open two or three notes in Obsidian and check them before importing everything. 
 PY {baseDir}/scripts/migrate_goodreads_csv.py --csv export.csv --vault-path "$VAULT" [--group-by-shelf]
 ```
 
-The rows already imported in step 2 are served from the cache. If Google hits its quota, the run continues with Open Library data and reports `google_books skipped` in `enrichment.warnings`. Re-run the same command later (after the cooldown, or with `BOOK_CAPTURE_GOOGLE_API_KEY` set) to fill the gaps; existing notes are updated in place.
+Successful lookups from step 2 use the cache; failed/skipped lookups may retry. If Google hits its quota, the run continues with Open Library data and reports `google_books skipped` in `enrichment.warnings`. Re-run the same command later (after the cooldown, or with `BOOK_CAPTURE_GOOGLE_API_KEY` set) to fill the gaps; existing notes are updated in place.
 
-Use `--no-enrich` to import only what the CSV contains.
+Use `--no-enrich` for local CSV-only processing. For hundreds of books, import locally first and enrich selected books as needed; Open Library [discourages bulk per-book API downloads](https://openlibrary.org/developers/api).
 
 ## 4. Dashboard
 

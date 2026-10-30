@@ -608,7 +608,7 @@ def _is_within_vault(note_path: Path, vault_path: str) -> bool:
 
 def _wiki_link(path: Path, vault_root: Path) -> str:
     rel = path.resolve().relative_to(vault_root.resolve())
-    no_ext = str(rel.with_suffix(""))
+    no_ext = rel.with_suffix("").as_posix()
     return f"[[{no_ext}]]"
 
 
@@ -844,7 +844,8 @@ def _upsert_note_core(payload: MetadataDict, vault_path: str, notes_dir: str, ta
     existing_content = note_path.read_text(encoding="utf-8") if note_path.exists() else None
     updated = existing_content != new_content
     if updated:
-        note_path.write_text(new_content, encoding="utf-8")
+        with note_path.open("w", encoding="utf-8", newline="\n") as note_file:
+            note_file.write(new_content)
 
     return make_result(
         STAGE,

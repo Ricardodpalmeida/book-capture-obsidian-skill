@@ -333,3 +333,33 @@ def test_isbn_miss_falls_back_to_openlibrary_title_search_before_google():
     assert metadata["description"] == "Uma cegueira branca.\n\nSegundo paragrafo."
     assert metadata["publisher"] is None  # work-level publishers belong to other editions
     assert not any("googleapis" in u for u in log)
+
+
+@pytest.mark.parametrize("failure", ["http", "network"])
+def test_google_budget_includes_retry_attempts(failure):
+    clock, calls = Clock(), []
+
+    def get(url, **kwargs):
+        calls.append(url)
+        if failure == "network":
+            raise OSError("offline")
+        return FakeResponse(503, {})
+
+    resolver = make_resolver(get, clock, providers=["google_books"], google_budget=2, google_max_retries=5)
+    resolver.lookup(isbn13=ISBN)
+    _, _, warnings = resolver.lookup(isbn13="9780201633610")
+    assert len(calls) == 2
+    assert resolver.stats.network_calls["google_books"] == 2
+    assert any("budget" in warning for warning in warnings)
+
+
+def test_default_openlibrary_interval_respects_one_request_per_second():
+    clock, times = Clock(), []
+    def get(url, **kwargs):
+        times.append(clock.now())
+        return FakeResponse(200, {})
+    resolver = make_resolver(get, clock, providers=["openlibrary"])
+    resolver.lookup(isbn13=ISBN)
+    resolver.lookup(isbn13="9780201633610")
+    assert len(times) == 2
+    assert times[1] - times[0] >= 1
