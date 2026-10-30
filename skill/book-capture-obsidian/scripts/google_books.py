@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import time
+from datetime import timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from common_isbn import normalize_isbn
 
 GOOGLE_BOOKS_URL = "https://www.googleapis.com/books/v1/volumes"
 RATE_LIMIT_WARNING = "google books rate limit (429)"
+QUOTA_WARNING = "google books quota limit (403)"
 GOOGLE_BOOKS_FIELDS = (
     "items(id,volumeInfo(title,authors,publisher,publishedDate,description,"
     "pageCount,language,categories,imageLinks,infoLink,industryIdentifiers))"
@@ -129,16 +132,45 @@ def parse_google_books_response(
     return metadata, identifiers[0] if identifiers else None, None
 
 
+def _retry_after_seconds(response: Any, now: Callable[[], float]) -> Optional[float]:
+    headers = getattr(response, "headers", {}) if response is not None else {}
+    value = headers.get("Retry-After") if isinstance(headers, Mapping) else None
+    if not isinstance(value, str):
+        return None
+    try:
+        if value.strip().isdigit():
+            return float(int(value.strip()))
+        date = parsedate_to_datetime(value)
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
+        return max(0.0, date.timestamp() - now())
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def _is_quota_error(response: Any) -> bool:
+    try:
+        payload = response.json()
+    except Exception:
+        return False
+    error = payload.get("error") if isinstance(payload, dict) else None
+    errors = error.get("errors") if isinstance(error, dict) else None
+    reasons = ("dailyLimitExceeded", "quotaExceeded", "rateLimitExceeded", "userRateLimitExceeded")
+    return isinstance(errors, list) and any(
+        isinstance(item, dict) and item.get("reason") in reasons for item in errors
+    )
+
+
 def _retry_delay_seconds(
     response: Any,
     attempt: int,
     delay_ms: int,
     max_retry_after_sec: int,
+    now: Callable[[], float] = time.time,
 ) -> float:
-    headers = getattr(response, "headers", {}) if response is not None else {}
-    retry_after = headers.get("Retry-After") if isinstance(headers, Mapping) else None
-    if isinstance(retry_after, str) and retry_after.strip().isdigit():
-        return float(min(int(retry_after.strip()), max_retry_after_sec))
+    retry_after = _retry_after_seconds(response, now)
+    if retry_after is not None:
+        return retry_after  # The server's minimum must not be shortened to our wait cap.
     exponential = (max(0, delay_ms) / 1000.0) * (2**attempt)
     return min(exponential, float(max_retry_after_sec))
 
@@ -155,8 +187,10 @@ def search_google_books(
     max_retry_after_sec: int = 10,
     request_get: Optional[RequestGet] = None,
     sleep: Sleep = time.sleep,
+    now: Callable[[], float] = time.time,
+    on_defer: Optional[Callable[[float], None]] = None,
 ) -> Tuple[Optional[MetadataDict], Optional[str], Optional[str]]:
-    """Search Google Books with bounded retry behavior and secret-safe errors."""
+    """Bound retries; on_defer receives the server wait when a request is deferred."""
     clean_query = str(query or "").strip()
     if not clean_query:
         return None, None, "missing query for google books"
@@ -196,12 +230,19 @@ def search_google_books(
             continue
 
         status_code = getattr(response, "status_code", None)
+        if status_code == 403 and _is_quota_error(response):
+            if on_defer is not None:
+                on_defer(_retry_after_seconds(response, now) or 0.0)
+            return None, None, QUOTA_WARNING
+
         if status_code == 429 or (isinstance(status_code, int) and 500 <= status_code <= 599):
-            if attempt >= retries:
-                if status_code == 429:
-                    return None, None, RATE_LIMIT_WARNING
-                return None, None, f"google books http {status_code}"
-            sleep(_retry_delay_seconds(response, attempt, delay_ms, retry_cap))
+            delay = _retry_delay_seconds(response, attempt, delay_ms, retry_cap, now)
+            if attempt >= retries or delay > retry_cap:
+                if on_defer is not None and (status_code == 429 or _retry_after_seconds(response, now) is not None):
+                    on_defer(_retry_after_seconds(response, now) or 0.0)
+                warning = RATE_LIMIT_WARNING if status_code == 429 else f"google books http {status_code}"
+                return None, None, warning
+            sleep(delay)
             continue
 
         if isinstance(status_code, int) and 400 <= status_code <= 499:

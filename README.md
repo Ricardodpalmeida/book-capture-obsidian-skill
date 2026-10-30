@@ -1,192 +1,65 @@
-# 📚 Book Capture for Obsidian
+# Book Capture for Obsidian
 
-**Snap a cover, scan a barcode or drop in your Goodreads export, and get clean, linked book notes in Obsidian, plus a live library dashboard.**
+Turn photos, barcodes, ISBNs, titles or Goodreads CSV exports into Obsidian book notes and a Dataview dashboard. Choose **Google Books only**, **Open Library only**, or both in either order. Re-runs preserve `## User Notes` and update matching books without deleting notes.
 
-An OpenClaw skill that does the boring parts of keeping a reading library:
+Install: `openclaw skills install @ricardodpalmeida/book-capture-obsidian`. [ClawHub](https://clawhub.ai/ricardodpalmeida/book-capture-obsidian) · [Changes](CHANGELOG.md)
 
-- **Any input.** A cover or barcode photo (barcode first, OCR fallback), an ISBN, a title, or a whole Goodreads CSV.
-- **Quota-safe metadata.** Open Library first, a local cache, and Google Books only to fill gaps, with a per-run budget and an automatic pause after a rate limit. Valid cache entries avoid repeated lookups; failed or skipped lookups can retry.
-- **Your notes stay yours.** Re-runs refresh metadata and never touch `## User Notes`. Nothing is ever deleted.
-- **A dashboard that keeps up.** Dataview views of what you are reading, what is next and what you finished, by shelf.
+## Requirements and setup
 
-```bash
-openclaw skills install @ricardodpalmeida/book-capture-obsidian
-```
+Python 3.10+ and an existing vault. Installed skill: `sh <skill>/scripts/setup.sh` creates its own environment and installs runtime dependencies. Windows instructions and all settings: [configuration](skill/book-capture-obsidian/references/configuration.md).
 
-On ClawHub: [book-capture-obsidian](https://clawhub.ai/ricardodpalmeida/book-capture-obsidian). Changes are in [CHANGELOG.md](CHANGELOG.md).
-
-## Repository Layout
-
-- `skill/book-capture-obsidian/SKILL.md` - skill metadata + workflow
-- `skill/book-capture-obsidian/scripts/` - ingestion and migration scripts
-- `skill/book-capture-obsidian/references/` - contracts, config, runbooks
-- `skill/book-capture-obsidian/assets/templates/` - note/dashboard templates
-- `skill/book-capture-obsidian/tests/` - unit tests
-- `scripts/` - CI, security scan, local packaging helper
-
-## Dependencies
-
-### System
-
-### Linux (Debian/Ubuntu)
-
-```bash
-sudo apt update
-sudo apt install -y python3 python3-venv python3-pip tesseract-ocr zbar-tools
-```
-
-### macOS (Homebrew)
-
-```bash
-brew update
-brew install python tesseract zbar
-```
-
-### Python runtime
-
-Requires Python 3.10+. Windows setup is in [configuration](skill/book-capture-obsidian/references/configuration.md).
-
-Installed skill: `sh <skill>/scripts/setup.sh` creates `<skill>/.venv` and installs the runtime packages.
-
-From a repository checkout:
+From this repository:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -U pip
 pip install -r requirements.txt
 ```
 
-### Python dev/test
+Photo extraction additionally uses zbar and/or Tesseract: Debian/Ubuntu packages `zbar-tools tesseract-ocr`; Homebrew `zbar tesseract`. Run `extract_isbn.py --diagnose-deps` first. Extraction tries `zbarimg`, `pyzbar`, `pytesseract`, then the Tesseract CLI; missing components are skipped. ISBN/title and CSV workflows do not require OCR.
+
+## Choose metadata provider
+
+| `BOOK_CAPTURE_METADATA_PROVIDER_ORDER` | Behavior |
+| --- | --- |
+| `google_books` | Google only, even on misses or quota errors |
+| `openlibrary` | Open Library only |
+| `google_books,openlibrary` | Google first; Open Library fills gaps |
+| `openlibrary,google_books` | Default; Open Library first, Google fills gaps |
+
+For Google, enable Books API in your Cloud project and privately supply `BOOK_CAPTURE_GOOGLE_API_KEY`. Paid Cloud billing does not guarantee extra Books quota. [Requirements and quota handling](skill/book-capture-obsidian/references/configuration.md#metadata-providers-and-api-requirements) explain restrictions, quota checks/increase requests, pacing and resumable imports.
+
+All workflows share provider selection and caching. Google defaults to one second between attempts, 100 attempts per run including retries, and a persisted pause on rate/quota errors. Long server backoff is respected. Limits are configurable per run; they do not replace the project's quota. Open Library is keyless but rate limited. Trusted input fields are retained.
+
+## Use
+
+`PY` below means the selected environment's Python. Replace paths with your files:
+
+```bash
+PY skill/book-capture-obsidian/scripts/ingest_photo.py --image book.jpg --vault-path /path/to/vault
+PY skill/book-capture-obsidian/scripts/migrate_goodreads_csv.py --csv export.csv --vault-path /path/to/vault --dry-run
+PY skill/book-capture-obsidian/scripts/generate_dashboard.py --vault-path /path/to/vault
+```
+
+Inspect the dry-run counts/errors, then omit `--dry-run` to import. For large exports, use a small batch first or `--no-enrich` for local CSV-only import. Full workflows: [SKILL.md](skill/book-capture-obsidian/SKILL.md); [migration runbook](skill/book-capture-obsidian/references/migration-runbook.md).
+
+Read JSON `ok`, `error` and `warnings` before treating a run as successful. Notes match by ISBN or Goodreads ID and may be renamed/refiled. Keep personal content below `## User Notes`; generated content above it is replaced. Dashboard tables need Obsidian Dataview.
+
+## Privacy and maintenance
+
+Only ISBN/title/author queries go to selected metadata APIs. Scripts leave source photos in place, never upload photos or vault contents, and redact the Google key from returned metadata/errors. Obsidian may fetch remote cover images.
+
+The installable skill contains `scripts/`, `references/`, `assets/templates/` and `tests/`. Root `scripts/` contains CI, privacy scans and packaging helpers:
 
 ```bash
 pip install -r requirements-dev.txt
-```
-
-`requirements.txt` includes runtime only:
-- requests
-- Pillow
-- pyzbar
-- pytesseract
-
-`requirements-dev.txt` adds:
-- pytest
-
-## Runtime Behavior and OCR Strategy
-
-Order of extraction:
-1. `zbarimg` CLI (primary barcode)
-2. `pyzbar` (secondary barcode)
-3. `pytesseract` OCR
-4. Direct `tesseract` CLI when `pytesseract` is unavailable
-
-If one component is missing, the pipeline degrades gracefully and continues with available stages.
-
-Photo capture and Goodreads import share one quota-aware metadata resolver. Open Library is queried first; Google Books only fills fields that are still empty. Answers are cached in `~/.cache/book-capture-obsidian/metadata.sqlite3` (180 days for hits, 14 for misses), Google is capped at 100 HTTP attempts per run including retries, and exhausted HTTP 429 retries pause Google for an hour across runs. Open Library requests are spaced at least one second apart by default. A Goodreads dry run makes no network calls. An optional `BOOK_CAPTURE_GOOGLE_API_KEY` uses the associated project quota; additional capacity is not guaranteed.
-
-## Configuration
-
-Machine-agnostic configuration via environment variables:
-
-```bash
-export BOOK_CAPTURE_VAULT_PATH="/path/to/your/vault"   # required; scripts refuse to write without it
-export BOOK_CAPTURE_NOTES_DIR="Books"                  # default
-export BOOK_CAPTURE_NOTE_LANGUAGE="en"                 # or "pt" for Portuguese headings
-export BOOK_CAPTURE_GOOGLE_API_KEY="..."               # optional
-```
-
-Full reference: `skill/book-capture-obsidian/references/configuration.md`
-
-## Quickstart
-
-## 1) Self-check scripts
-
-```bash
-python skill/book-capture-obsidian/scripts/extract_isbn.py --self-check
-python skill/book-capture-obsidian/scripts/resolve_metadata.py --self-check
-python skill/book-capture-obsidian/scripts/upsert_obsidian_note.py --self-check
-python skill/book-capture-obsidian/scripts/ingest_photo.py --self-check
-python skill/book-capture-obsidian/scripts/migrate_goodreads_csv.py --self-check
-python skill/book-capture-obsidian/scripts/generate_dashboard.py --self-check
-```
-
-## 2) Ingest a photo into Obsidian
-
-```bash
-python skill/book-capture-obsidian/scripts/ingest_photo.py \
-  --image ./input/book-photo.jpg \
-  --vault-path "$BOOK_CAPTURE_VAULT_PATH" \
-  --notes-dir "$BOOK_CAPTURE_NOTES_DIR"
-```
-
-## 3) Migrate Goodreads CSV (dry run first)
-
-```bash
-python skill/book-capture-obsidian/scripts/migrate_goodreads_csv.py \
-  --csv ./input/goodreads_library_export.csv \
-  --vault-path "$BOOK_CAPTURE_VAULT_PATH" \
-  --notes-dir "$BOOK_CAPTURE_NOTES_DIR" \
-  --dry-run
-```
-
-Try a small live batch with `--limit 20`, then run the full migration:
-
-```bash
-python skill/book-capture-obsidian/scripts/migrate_goodreads_csv.py \
-  --csv ./input/goodreads_library_export.csv \
-  --vault-path "$BOOK_CAPTURE_VAULT_PATH" \
-  --notes-dir "$BOOK_CAPTURE_NOTES_DIR"
-```
-
-## 4) Generate or refresh dashboard
-
-```bash
-python skill/book-capture-obsidian/scripts/generate_dashboard.py \
-  --vault-path "$BOOK_CAPTURE_VAULT_PATH" \
-  --notes-dir "$BOOK_CAPTURE_NOTES_DIR"
-```
-
-## QA and Security
-
-Run local CI:
-
-```bash
 sh scripts/run_ci_local.sh
-```
-
-Run only privacy/security scan:
-
-```bash
-sh scripts/security_scan_no_pii.sh
-```
-
-## Privacy and Safety Defaults
-
-- No machine-specific paths required
-- No secret storage in notes/templates/config
-- No raw image retention by default
-- No outbound writes except metadata API reads (Open Library / Google Books)
-
-## Packaging
-
-Local package helper:
-
-```bash
 sh scripts/package_skill_local.sh --with-security-scan
 ```
 
-This creates `dist/book-capture-obsidian-<timestamp>.skill.tgz` plus checksum.
+The package helper writes `dist/book-capture-obsidian-<timestamp>.skill.tgz` with a checksum. Use [RELEASE_READINESS.md](RELEASE_READINESS.md) before publishing.
 
-## Publish Targets
-
-- GitHub public repository
-- ClawHub skill publication
-
-Use `RELEASE_READINESS.md` checklist before publishing.
-
-## License
-
-[MIT-0](LICENSE) (MIT No Attribution): use, copy, modify and redistribute it for any purpose, with no attribution required. The same license applies on ClawHub.
+[MIT-0](LICENSE).
 
 ## More from the author
 
@@ -194,7 +67,7 @@ Made by Ricardo Pacheco Almeida. I write about applied AI, agents and enterprise
 
 | Skill | What it does |
 |-------|--------------|
-| [whetstone](https://github.com/Ricardodpalmeida/whetstone) | Makes a coding agent size every change by risk before it touches anything, then scale the process to match. |
+| [whetstone](https://github.com/Ricardodpalmeida/whetstone) | Reviews consequential code changes with checks proportional to their impact. |
 | [LadybugDB openCypher](https://clawhub.ai/ricardodpalmeida/ladybug-opencypher-updated) | Design and query LadybugDB graphs with openCypher, including imports, full-text search and Neo4j query adaptation. |
 | [Microsoft Learn MCP](https://clawhub.ai/ricardodpalmeida/mslearn-mcp) | Grounds Azure, .NET, Microsoft 365 and Power Platform answers in official Microsoft Learn docs. |
 | [Excalidraw Diagrams for Obsidian](https://clawhub.ai/ricardodpalmeida/excalidraw-diagrams) | Turns boxes and arrows into clean, hand-drawn Excalidraw diagrams for Obsidian or excalidraw.com. |

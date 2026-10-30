@@ -1,6 +1,6 @@
 # Goodreads CSV Migration Runbook
 
-Import a Goodreads library export into Obsidian notes without burning API quota or duplicating notes.
+Import Goodreads rows into Obsidian. Select Google Books, Open Library or both using [configuration](configuration.md); `--no-enrich` needs neither API.
 
 ## Input
 
@@ -30,7 +30,7 @@ Open two or three notes in Obsidian and check them before importing everything. 
 PY {baseDir}/scripts/migrate_goodreads_csv.py --csv export.csv --vault-path "$VAULT" [--group-by-shelf]
 ```
 
-Successful lookups from step 2 use the cache; failed/skipped lookups may retry. If Google hits its quota, the run continues with Open Library data and reports `google_books skipped` in `enrichment.warnings`. Re-run the same command later (after the cooldown, or with `BOOK_CAPTURE_GOOGLE_API_KEY` set) to fill the gaps; existing notes are updated in place.
+Cached results are reused; failed/skipped lookups may retry. On quota/budget limits, the import keeps CSV and available selected-provider data and reports warnings. Google-only never calls Open Library. Re-run after the applicable quota reset/cooldown to fill gaps; matching notes update in place. A new key does not erase the project quota or persisted pause.
 
 Use `--no-enrich` for local CSV-only processing. For hundreds of books, import locally first and enrich selected books as needed; Open Library [discourages bulk per-book API downloads](https://openlibrary.org/developers/api).
 
@@ -51,7 +51,7 @@ PY {baseDir}/scripts/generate_dashboard.py --vault-path "$VAULT"
 | `Bookshelves` | extra tags |
 | `Book Id` | `goodreads_book_id`, written only when the book has no ISBN |
 
-Every note gets the `book` tag. Description, cover and categories come from Open Library, then Google Books for whatever is still missing.
+Every note gets the `book` tag. Selected providers fill missing description, cover and categories in configured order.
 
 ## Identity and re-runs
 

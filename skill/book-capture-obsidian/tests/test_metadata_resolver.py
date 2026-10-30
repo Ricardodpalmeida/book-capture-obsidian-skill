@@ -363,3 +363,89 @@ def test_default_openlibrary_interval_respects_one_request_per_second():
     resolver.lookup(isbn13="9780201633610")
     assert len(times) == 2
     assert times[1] - times[0] >= 1
+
+
+@pytest.mark.parametrize("status,payload", [(200, {}), (200, {"items": [{"volumeInfo": {"title": "Test Book"}}]}), (429, {})])
+def test_google_only_never_falls_back_when_incomplete_missing_or_limited(status, payload):
+    clock, calls = Clock(), []
+    def get(url, **kwargs):
+        calls.append(url)
+        assert "googleapis.com" in url
+        return FakeResponse(status, payload)
+    resolver = make_resolver(get, clock, providers=["google_books"], google_max_retries=0)
+    resolver.lookup(isbn13=ISBN)
+    resolver.lookup(isbn13="9780201633610")
+    assert calls and resolver.stats.network_calls["openlibrary"] == 0
+
+
+def test_google_first_preserves_google_fields_and_fills_from_openlibrary():
+    clock, calls = Clock(), []
+    payload = google_payload()
+    del payload["items"][0]["volumeInfo"]["description"]
+    get = router({
+        "https://www.googleapis.com": lambda: FakeResponse(200, payload),
+        "https://openlibrary.org": lambda: FakeResponse(200, openlibrary_book()),
+    }, calls)
+    resolver = make_resolver(get, clock, providers=["google_books", "openlibrary"])
+    metadata, _, _ = resolver.lookup(isbn13=ISBN)
+    assert "googleapis.com" in calls[0]
+    assert metadata["title"] == "Test Book (Google)"
+    assert metadata["source"] == "google_books"
+    assert metadata["description"] == "An OL description"
+
+
+def test_google_only_ignores_openlibrary_cache_and_keeps_trusted_base():
+    clock = Clock()
+    cache = MetadataCache(None, now=clock.now)
+    cache.put(f"openlibrary:isbn:{ISBN}", {"metadata": {"title": "OL cached"}, "isbn13": ISBN}, 1)
+    calls = []
+    resolver = make_resolver(router({"https://www.googleapis.com": lambda: FakeResponse(200, google_payload())}, calls), clock,
+                             cache, providers=["google_books"])
+    metadata, _, _ = resolver.lookup(isbn13=ISBN, base={"title": "My title"})
+    assert metadata["title"] == "My title" and metadata["description"] == "A Google description"
+    assert len(calls) == 1 and resolver.stats.cache_hits == 0
+
+
+@pytest.mark.parametrize("providers", ["google_books", "openlibrary", "google_books,openlibrary", "openlibrary,google_books"])
+def test_provider_and_pacing_environment_settings(monkeypatch, providers):
+    monkeypatch.setenv("BOOK_CAPTURE_METADATA_PROVIDER_ORDER", providers)
+    monkeypatch.setenv("BOOK_CAPTURE_GOOGLE_MIN_INTERVAL_MS", "1200")
+    resolver = MetadataResolver.from_env(cache=MetadataCache(None))
+    assert resolver.providers == providers.split(",")
+    assert resolver.google_min_interval_ms == 1200
+
+
+def test_google_paces_every_attempt_including_retry_and_later_lookup():
+    clock, times = Clock(), []
+    responses = [FakeResponse(503, {}), FakeResponse(200, {}), FakeResponse(200, {})]
+    def get(*a, **k):
+        times.append(clock.now())
+        return responses.pop(0)
+    resolver = make_resolver(get, clock, providers=["google_books"], google_min_interval_ms=1200, google_delay_ms=0)
+    resolver.lookup(isbn13=ISBN)
+    resolver.lookup(isbn13="9780201633610")
+    assert len(times) == 3 and times[0] == 1_000_000.0
+    assert all(b-a >= 1.199 for a,b in zip(times,times[1:]))
+
+
+@pytest.mark.parametrize("status,headers,payload", [
+    (429, {"Retry-After": "7200"}, {}),
+    (503, {"Retry-After": "7200"}, {}),
+    (403, {}, {"error": {"errors": [{"reason": "dailyLimitExceeded"}]}}),
+])
+def test_deferred_google_requests_persist_without_provider_switch(tmp_path, status, headers, payload):
+    clock, calls = Clock(), []
+    def get(url, **kwargs):
+        calls.append(url)
+        return FakeResponse(status, payload, headers)
+    path = tmp_path / "cache.sqlite3"
+    resolver = make_resolver(get, clock, MetadataCache(path, now=clock.now), providers=["google_books"])
+    resolver.lookup(isbn13=ISBN)
+    assert len(calls) == 1
+    clock.t += 3500 if status == 403 else 7000
+    next_run = make_resolver(get, clock, MetadataCache(path, now=clock.now), providers=["google_books"])
+    _, _, warnings = next_run.lookup(isbn13="9780201633610")
+    assert len(calls) == 1 and any("cooling down" in w for w in warnings)
+    clock.t += 3601
+    next_run.lookup(isbn13="9780201633610")
+    assert len(calls) == 2

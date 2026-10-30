@@ -34,27 +34,41 @@ Use that interpreter as `PY` in the workflows. Photo extraction also needs the s
 | `BOOK_CAPTURE_SHELVES_READING` | `currently-reading,reading` | Shelves counted as "reading". |
 | `BOOK_CAPTURE_SHELVES_READ` | `read,finished` | Shelves counted as "read". |
 
-## Metadata lookups
+## Metadata providers and API requirements
 
-Open Library is keyless but rate limited: the default one-second gap follows its [unidentified-client limit](https://openlibrary.org/developers/api). Identified clients with contact details may use its higher limit. Google fills gaps; a per-run HTTP-attempt budget, cache and persisted cooldown reduce quota use.
+Set `BOOK_CAPTURE_METADATA_PROVIDER_ORDER` to `google_books`, `openlibrary`, `google_books,openlibrary` or `openlibrary,google_books` (default). This controls every lookup workflow. Only listed providers run; the first result wins and later providers fill gaps. Trusted CSV/input fields are never overwritten. Cache entries are provider-specific.
+
+Google-only, in PowerShell:
+
+```powershell
+$env:BOOK_CAPTURE_METADATA_PROVIDER_ORDER = "google_books"
+$env:BOOK_CAPTURE_GOOGLE_MAX_REQUESTS_PER_RUN = "100"
+```
+
+In Bash: `export BOOK_CAPTURE_METADATA_PROVIDER_ORDER=google_books`. Supply `BOOK_CAPTURE_GOOGLE_API_KEY` through your private environment/secret configuration, never a note or committed file.
+
+**Google Books requirements:** select your Cloud project, enable the Books API, create an API key restricted to Books, and set compatible application restrictions for the machine running the scripts. [Google requires application identification](https://developers.google.com/books/docs/v1/using#auth); this client uses an API key for public metadata, not OAuth/private shelves. Legacy keyless attempts remain supported by the client but are not a reliable quota plan.
+
+**Limits:** inspect that project's Books API quotas under APIs & Services. Billing alone does not establish a higher Books limit, and no fixed daily allowance is assumed here. Quota is shared with other applications using the project. If needed, [request an increase where available](https://docs.cloud.google.com/docs/quotas/view-manage); availability and approval are not guaranteed. Until approved, cache results, pace requests, budget small batches and resume after the applicable reset/backoff. Switching keys in the same project does not create more project quota.
+
+**Open Library:** no key; the default one-second gap follows its [unidentified-client limit](https://openlibrary.org/developers/api). Identified clients can use its documented higher rate. It discourages bulk per-book downloads: use CSV-only import first for large libraries.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `BOOK_CAPTURE_METADATA_PROVIDER_ORDER` | `openlibrary,google_books` | Lookup order. Later providers only fill gaps. |
-| `BOOK_CAPTURE_ENABLE_ENRICH` | `true` | `false` makes Goodreads imports use only the CSV data. The old name `BOOK_CAPTURE_ENABLE_GOOGLE_ENRICH` still works. |
-| `BOOK_CAPTURE_GOOGLE_API_KEY` | none | Optional Google Books project key. Quota depends on that project; extra capacity is not guaranteed. Redacted from results. |
-| `BOOK_CAPTURE_GOOGLE_MAX_REQUESTS_PER_RUN` | `100` | Maximum HTTP attempts per run, including retries. |
-| `BOOK_CAPTURE_GOOGLE_COOLDOWN_SECONDS` | `3600` | After exhausted 429 retries, skip Google for this long across runs. |
-| `BOOK_CAPTURE_GOOGLE_MAX_RETRIES` | `2` | Retries for network errors, 429 and 5xx before giving up. |
-| `BOOK_CAPTURE_GOOGLE_DELAY_MS` | `400` | Base backoff between retries (doubles each time). |
-| `BOOK_CAPTURE_GOOGLE_MAX_RETRY_AFTER_SECONDS` | `10` | Upper bound on any single wait. |
-| `BOOK_CAPTURE_OPENLIBRARY_DELAY_MS` | `1000` | Minimum gap between Open Library requests. |
+| `BOOK_CAPTURE_ENABLE_ENRICH` | `true` | `false`: Goodreads CSV only. Legacy `BOOK_CAPTURE_ENABLE_GOOGLE_ENRICH` remains supported. |
+| `BOOK_CAPTURE_GOOGLE_MAX_REQUESTS_PER_RUN` | `100` | Maximum Google HTTP attempts per resolver/run, including retries. Not a project-wide quota controller. |
+| `BOOK_CAPTURE_GOOGLE_MIN_INTERVAL_MS` | `1000` | Minimum gap between Google attempts, including retries, within one run. Adjust to your actual quota. |
+| `BOOK_CAPTURE_GOOGLE_COOLDOWN_SECONDS` | `3600` | Persisted pause after exhausted 429 retries or recognized quota-related 403. A longer server wait wins. |
+| `BOOK_CAPTURE_GOOGLE_MAX_RETRIES` | `2` | Retries for network errors, 429 and 5xx. Quota-related 403 defers immediately. |
+| `BOOK_CAPTURE_GOOGLE_DELAY_MS` | `400` | Exponential retry backoff base; separate from steady request spacing. |
+| `BOOK_CAPTURE_GOOGLE_MAX_RETRY_AFTER_SECONDS` | `10` | Maximum in-process wait per retry. Longer `Retry-After` defers the provider, never retries early. |
+| `BOOK_CAPTURE_OPENLIBRARY_DELAY_MS` | `1000` | Minimum Open Library request gap within one run. |
 | `BOOK_CAPTURE_HTTP_TIMEOUT_SECONDS` | `12` | Per-request timeout. |
-| `BOOK_CAPTURE_USER_AGENT` | `book-capture-obsidian/1.3 (+repo URL)` | Sent to both APIs; Open Library asks clients to identify themselves. |
-| `BOOK_CAPTURE_CACHE` | `on` | `off` keeps the cache in memory for the current run only. |
-| `BOOK_CAPTURE_CACHE_DIR` | `$XDG_CACHE_HOME/book-capture-obsidian` or `~/.cache/book-capture-obsidian` | Where `metadata.sqlite3` lives. Deleting it is safe. |
+| `BOOK_CAPTURE_USER_AGENT` | `book-capture-obsidian/1.4 (+repo URL)` | API client identification; include contact details for Open Library's identified-client rate. |
+| `BOOK_CAPTURE_CACHE` | `on` | `off`: cache and cooldowns last only for the current process. |
+| `BOOK_CAPTURE_CACHE_DIR` | `$XDG_CACHE_HOME/book-capture-obsidian` or `~/.cache/book-capture-obsidian` | Stores `metadata.sqlite3`. |
 
-Found books are cached for 180 days and "not found" answers for 14 days. Network errors, 5xx responses and rate limits are never cached.
+Found books cache for 180 days; misses for 14 days. Transient failures are not cached as misses. Valid cache entries work during cooldowns. Keep one import worker: per-run budgets/pacing do not coordinate simultaneous processes. With disk caching disabled or unavailable, cooldown cannot survive a restart; retain the reported wait yourself. Do not delete the cache to bypass a quota pause.
 
 ## Photo extraction
 

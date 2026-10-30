@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0
+
+- Make Google-only, Open-Library-only and both provider orders explicit across workflows.
+- Add configurable Google request pacing; defer quota-related 403 and respect long/numeric/date Retry-After across runs.
+- Document project API-key setup, actual quotas and conditional increase requests without promising extra capacity from billing.
+- Remove repeated instructions while preserving note contracts, data protections and recovery guidance.
+
 ## 1.3.6
 
 - Condense instructions while preserving workflows, data contracts and user-note protection.

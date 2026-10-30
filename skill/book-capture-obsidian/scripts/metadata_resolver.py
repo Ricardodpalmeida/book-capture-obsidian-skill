@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""Quota-aware metadata lookup shared by photo ingest and Goodreads migration.
+"""Ordered metadata providers with caching, request budgets and persisted backoff.
 
-Open Library is queried first because it needs no key and has no daily quota.
-Google Books only fills fields that are still missing, and every call to it is
-bounded: results are cached on disk, a per-run budget caps requests, and a
-rate-limit response puts Google on a persisted cooldown so later rows and later
-runs skip it instead of retrying into the same 429.
+Use either provider alone or both in the selected order. Trusted input wins;
+providers only fill missing fields. Google requests include pacing and retries.
 """
 
 from __future__ import annotations
@@ -18,7 +15,7 @@ from urllib.parse import quote
 
 from common_config import get_env_csv, get_env_int, get_env_str
 from common_isbn import normalize_isbn
-from google_books import RATE_LIMIT_WARNING, search_google_books
+from google_books import QUOTA_WARNING, RATE_LIMIT_WARNING, search_google_books
 from metadata_cache import MetadataCache, default_cache_path
 
 MetadataDict = Dict[str, Any]
@@ -27,7 +24,7 @@ Sleep = Callable[[float], None]
 Now = Callable[[], float]
 
 DEFAULT_USER_AGENT = (
-    "book-capture-obsidian/1.3 (+https://github.com/Ricardodpalmeida/book-capture-obsidian-skill)"
+    "book-capture-obsidian/1.4 (+https://github.com/Ricardodpalmeida/book-capture-obsidian-skill)"
 )
 DEFAULT_PROVIDERS = ["openlibrary", "google_books"]
 OPENLIBRARY = "openlibrary"
@@ -163,6 +160,7 @@ class MetadataResolver:
         google_budget: int = 100,
         google_cooldown_sec: int = 3600,
         google_delay_ms: int = 400,
+        google_min_interval_ms: int = 1000,
         google_max_retries: int = 2,
         google_max_retry_after_sec: int = 10,
         openlibrary_delay_ms: int = 1000,
@@ -179,6 +177,7 @@ class MetadataResolver:
         self.google_budget = max(0, int(google_budget))
         self.google_cooldown_sec = max(0, int(google_cooldown_sec))
         self.google_delay_ms = google_delay_ms
+        self.google_min_interval_ms = max(0, int(google_min_interval_ms))
         self.google_max_retries = google_max_retries
         self.google_max_retry_after_sec = google_max_retry_after_sec
         self.openlibrary_delay_ms = max(0, int(openlibrary_delay_ms))
@@ -189,6 +188,7 @@ class MetadataResolver:
         self._sleep = sleep
         self._now = now
         self._last_openlibrary_call = 0.0
+        self._last_google_call: Optional[float] = None
         self.stats = ResolverStats()
 
     @classmethod
@@ -200,6 +200,7 @@ class MetadataResolver:
             "google_budget": get_env_int("BOOK_CAPTURE_GOOGLE_MAX_REQUESTS_PER_RUN", 100, minimum=0),
             "google_cooldown_sec": get_env_int("BOOK_CAPTURE_GOOGLE_COOLDOWN_SECONDS", 3600, minimum=0),
             "google_delay_ms": get_env_int("BOOK_CAPTURE_GOOGLE_DELAY_MS", 400, minimum=0),
+            "google_min_interval_ms": get_env_int("BOOK_CAPTURE_GOOGLE_MIN_INTERVAL_MS", 1000, minimum=0),
             "google_max_retries": get_env_int("BOOK_CAPTURE_GOOGLE_MAX_RETRIES", 2, minimum=0),
             "google_max_retry_after_sec": get_env_int(
                 "BOOK_CAPTURE_GOOGLE_MAX_RETRY_AFTER_SECONDS", 10, minimum=0
@@ -284,7 +285,7 @@ class MetadataResolver:
         if cooldown:
             if provider == GOOGLE:
                 self.stats.google_skipped_cooldown += 1
-            return None, None, f"{provider} skipped: cooling down after a rate limit"
+            return None, None, f"{provider} skipped: cooling down after API backoff or quota"
 
         if provider == GOOGLE:
             if self.stats.network_calls[GOOGLE] >= self.google_budget:
@@ -313,7 +314,18 @@ class MetadataResolver:
             query = " ".join(parts)
         remaining = self.google_budget - self.stats.network_calls[GOOGLE]
 
+        defer_for: Optional[float] = None
+
+        def deferred(seconds: float) -> None:
+            nonlocal defer_for
+            defer_for = seconds
+
         def counted_get(*args: Any, **kwargs: Any) -> Any:
+            if self._last_google_call is not None:
+                wait = self._last_google_call + self.google_min_interval_ms / 1000.0 - self._now()
+                if wait > 0:
+                    self._sleep(wait)
+            self._last_google_call = self._now()
             self.stats.network_calls[GOOGLE] += 1
             return self._get()(*args, **kwargs)
 
@@ -329,12 +341,15 @@ class MetadataResolver:
             max_retry_after_sec=self.google_max_retry_after_sec,
             request_get=counted_get,
             sleep=self._sleep,
+            now=self._now,
+            on_defer=deferred,
         )
-        if warning == RATE_LIMIT_WARNING:
+        if warning in (RATE_LIMIT_WARNING, QUOTA_WARNING):
             self.stats.rate_limited[GOOGLE] += 1
-            self.cache.set_cooldown(GOOGLE, self.google_cooldown_sec, warning)
-            minutes = max(1, self.google_cooldown_sec // 60)
-            return None, None, f"{warning}; Google Books paused for {minutes} min", False
+            defer_for = max(defer_for or 0.0, self.google_cooldown_sec)
+        if defer_for is not None and defer_for > 0:
+            self.cache.set_cooldown(GOOGLE, defer_for, warning or "server backoff")
+            return None, None, f"{warning}; Google Books paused for {defer_for:g} seconds", False
         if metadata and not isbn:
             # Title searches get the same guard as Open Library, and the
             # edition ISBN is not adopted (it may belong to any edition).

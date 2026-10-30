@@ -12,10 +12,10 @@
 ## Metadata not found, or notes without a description
 
 - `warnings` lists each provider's answer. `openlibrary returned no entry` and `google books returned no items` are real misses; try a title lookup.
-- `google_books skipped: cooling down after a rate limit` or `per-run request budget reached` means the quota guard stopped Google. The note was written with Open Library data. Re-run later, or set `BOOK_CAPTURE_GOOGLE_API_KEY`.
-- `found no close title/author match` means a title search returned only other books (sequels, translations listed under another script, same title by a different author). Nothing was guessed. Ask the user for the ISBN, which is always more reliable than a title.
-- A wrong cached answer can be cleared by deleting `metadata.sqlite3` in the cache folder (see `configuration.md`).
-- HTTP 400 or 403 from Google usually means an invalid or restricted API key.
+- `cooling down` or `per-run request budget reached`: the guard paused Google. Keep the cache; resume after the reported wait and actual quota reset. Only selected providers may fill gaps; Google-only can leave metadata missing.
+- `google books quota limit (403)`: check the project's Books quota. Ordinary 400/403 can instead mean a bad request, disabled API or incompatible key restriction; inspect the Cloud console without logging the key. See [API requirements](configuration.md#metadata-providers-and-api-requirements).
+- `found no close title/author match`: candidates did not match; request an ISBN rather than choosing another book.
+- For stale/wrong cached metadata, verify the source then clear the cache only if needed. This also removes cooldown state: wait out any active quota pause first.
 
 ## A note did not update
 

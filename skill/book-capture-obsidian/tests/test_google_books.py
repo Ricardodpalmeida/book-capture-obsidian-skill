@@ -94,7 +94,7 @@ def test_request_exception_is_secret_safe_and_bounded_without_network_or_sleep()
     assert SENTINEL not in json.dumps(result)
 
 
-def test_429_respects_numeric_retry_after_with_safe_cap():
+def test_long_retry_after_defers_instead_of_retrying_early():
     responses = [
         FakeResponse(429, {}, {"Retry-After": "99"}),
         FakeResponse(200, _payload()),
@@ -110,8 +110,9 @@ def test_429_respects_numeric_retry_after_with_safe_cap():
         max_retry_after_sec=3,
     )
 
-    assert result[0] is not None and result[2] is None
-    assert sleeps == [3.0]
+    assert result[0] is None and result[2] == google_books.RATE_LIMIT_WARNING
+    assert len(responses) == 1
+    assert sleeps == []
 
 
 @pytest.mark.parametrize("status_code", [500, 502, 503, 599])
@@ -173,3 +174,29 @@ def test_response_normalization_is_defensive():
     assert metadata["page_count"] is None
     assert metadata["cover_image"].startswith("https://")
     assert "zoom=2" in metadata["cover_image"]
+
+
+@pytest.mark.parametrize("retry_after", ["2", "Thu, 01 Jan 1970 00:16:42 GMT"])
+def test_retry_after_seconds_or_http_date_is_respected(retry_after):
+    responses = [FakeResponse(429, {}, {"Retry-After": retry_after}), FakeResponse(200, _payload())]
+    sleeps = []
+    result = google_books.search_google_books(
+        "test", request_get=lambda *a, **k: responses.pop(0), sleep=sleeps.append,
+        now=lambda: 1000.0, max_retries=1, max_retry_after_sec=3,
+    )
+    assert result[0] and sleeps == [2.0]
+
+
+@pytest.mark.parametrize("reason", ["dailyLimitExceeded", "quotaExceeded", "rateLimitExceeded", "userRateLimitExceeded"])
+def test_quota_403_defers_without_retry_or_error_body_leak(reason):
+    calls, deferred = [], []
+    def get(*a, **k):
+        calls.append(1)
+        return FakeResponse(403, {"error": {"errors": [{"reason": reason, "message": SENTINEL}]}})
+    result = google_books.search_google_books(
+        "test", request_get=get, sleep=lambda s: pytest.fail("quota must defer"),
+        on_defer=deferred.append, api_key=SENTINEL,
+    )
+    assert len(calls) == 1 and deferred == [0.0]
+    assert result[2] == google_books.QUOTA_WARNING
+    assert SENTINEL not in json.dumps(result)
