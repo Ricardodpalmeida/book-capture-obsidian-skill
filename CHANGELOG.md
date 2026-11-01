@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Report block filled from the scripts' JSON (created, updated, skipped, note paths, providers, warnings); slashes in prose replaced by words. From the 1 November 2026 skills audit. No script changes.
+
 ## 1.4.0
 
 - Make Google-only, Open-Library-only and both provider orders explicit across workflows.
