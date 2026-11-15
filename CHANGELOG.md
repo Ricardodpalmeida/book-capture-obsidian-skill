@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.2 (2026-11-15)
+
+- Documentation only: add README quick-navigation links. Add a human-facing documentation index to the Book Capture package. Agent instructions, scripts, references, examples, dependencies and configuration are unchanged.
+
 ## 1.4.1
 
 - Report block filled from the scripts' JSON (created, updated, skipped, note paths, providers, warnings); slashes in prose replaced by words. From the 1 November 2026 skills audit. No script changes.

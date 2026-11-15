@@ -12,6 +12,10 @@
 
 Logging a book should take one photo, not ten minutes of typing. **Book Capture for Obsidian** is an Agent Skill that turns a cover photo, a barcode, an ISBN, a title or a whole Goodreads export into Obsidian book notes, with covers, summaries and a library dashboard. Choose Google Books only, Open Library only, or both in either order. Re-runs update the books they match and never touch what you wrote under `## User Notes`.
 
+## Quick navigation
+
+[Note format](#what-you-get) · [Provider choice](#choose-a-metadata-provider) · [Install](#install) · [CLI usage](#run-the-scripts-yourself) · [Privacy](#privacy)
+
 ## What you get
 
 One note per book, filed under `Books/` and named after its title, author, publisher and year. This one was written by `upsert_obsidian_note.py` from sample metadata:
