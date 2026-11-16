@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.4 (2026-11-16)
+
+- Documentation only: Make the packaged README self-contained with a short overview and a direct link to its canonical ClawHub page. Agent instructions, code, operational references, examples, templates, dependencies and configuration are unchanged.
+
 ## 1.4.2 (2026-11-15)
 
 - Documentation only: add README quick-navigation links. Add a human-facing documentation index to the Book Capture package. Agent instructions, scripts, references, examples, dependencies and configuration are unchanged.
